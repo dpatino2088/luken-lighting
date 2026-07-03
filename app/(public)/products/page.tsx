@@ -79,6 +79,23 @@ export default async function ProductsPage({ searchParams }: ProductsPageProps) 
     );
   }
 
+  // Always keep a fixed order by system/category (as defined by
+  // product_categories.sort_order — e.g. Downlights first, then the next, ...),
+  // never by product insertion order. Within a category: product sort_order,
+  // then name. Products with no category go last.
+  const categoryOrder = new Map(categories.map((c, i) => [c.id, i]));
+  const catRank = (id: string | null | undefined) =>
+    id != null && categoryOrder.has(id) ? categoryOrder.get(id)! : Number.MAX_SAFE_INTEGER;
+  displayProducts = [...displayProducts].sort((a, b) => {
+    const ca = catRank(a.category_id);
+    const cb = catRank(b.category_id);
+    if (ca !== cb) return ca - cb;
+    const sa = a.sort_order ?? 0;
+    const sb = b.sort_order ?? 0;
+    if (sa !== sb) return sa - sb;
+    return a.name.localeCompare(b.name);
+  });
+
   const categoriesWithCount = categories.map((cat) => ({
     ...cat,
     productCount: allProducts.filter((p) => p.category_id === cat.id).length,

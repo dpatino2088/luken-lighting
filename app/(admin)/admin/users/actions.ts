@@ -88,8 +88,28 @@ export async function updateUserRole(userId: string, role: AppRole): Promise<{ e
   const admin = createAdminClient();
   if (!admin) return { error: 'Server not configured' };
 
-  const { error } = await admin.from('user_profiles').update({ role }).eq('id', userId);
-  if (error) return { error: error.message };
+  // Some auth users predate the user_profiles table (or were created directly in
+  // Supabase Auth) and have no profile row yet. A plain UPDATE would match zero
+  // rows and silently "succeed" without persisting the role. So: update if the
+  // profile exists, otherwise insert one (full_name is NOT NULL) using the name
+  // from the auth metadata. This never overwrites an existing full_name.
+  const { data: existing, error: selectError } = await admin
+    .from('user_profiles')
+    .select('id')
+    .eq('id', userId)
+    .maybeSingle();
+  if (selectError) return { error: selectError.message };
+
+  if (existing) {
+    const { error } = await admin.from('user_profiles').update({ role }).eq('id', userId);
+    if (error) return { error: error.message };
+  } else {
+    const { data: authRes } = await admin.auth.admin.getUserById(userId);
+    const fullName =
+      (authRes?.user?.user_metadata?.full_name as string) || authRes?.user?.email || 'User';
+    const { error } = await admin.from('user_profiles').insert({ id: userId, full_name: fullName, role });
+    if (error) return { error: error.message };
+  }
 
   revalidatePath('/admin/users');
   return { success: true };

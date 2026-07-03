@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
 import { ProductVariant } from '@/lib/types';
 import { generateMetadata as genMeta } from '@/lib/seo';
-import { VariantView } from '../page';
+import { VariantView } from '../VariantView';
 
 interface PageProps {
   params: Promise<{ slug: string; variantSlug: string }>;
