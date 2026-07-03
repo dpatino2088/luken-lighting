@@ -111,7 +111,14 @@ export function ProjectEditPage({
       }
 
       const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
-      const filePath = `inspiration/${project.id}/gallery-${Date.now()}.${ext}`;
+      // Unique per file: batch uploads fire within the same millisecond, so
+      // Date.now() alone collides and (with upsert) every file overwrites the
+      // same object → duplicated/single image. A random id guarantees uniqueness.
+      const unique =
+        (typeof crypto !== 'undefined' && crypto.randomUUID)
+          ? crypto.randomUUID()
+          : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const filePath = `inspiration/${project.id}/gallery-${unique}.${ext}`;
 
       const { error: uploadError } = await supabase.storage
         .from(STORAGE_BUCKET)
@@ -139,10 +146,13 @@ export function ProjectEditPage({
     setUploading(false);
   };
 
-  const onGalleryFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const onGalleryFileSelected = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    files.forEach((file) => handleGalleryUpload(file));
     e.target.value = '';
+    // Upload sequentially so every file completes and preserves selection order.
+    for (const file of files) {
+      await handleGalleryUpload(file);
+    }
   };
 
   const handleDeleteImage = async (imageId: string) => {
