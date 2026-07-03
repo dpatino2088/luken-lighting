@@ -26,6 +26,8 @@ import {
   deleteCategory,
   updateCategorySortOrder,
 } from '@/app/(admin)/admin/categories/actions';
+import { confirmDialog } from '@/components/ui/ConfirmDialog';
+import { toast } from '@/components/ui/Toast';
 import type { ProductCategory } from '@/lib/types';
 
 interface Props {
@@ -157,11 +159,20 @@ export function CategoriesManager({ initialCategories }: Props) {
   };
 
   const handleDelete = async (cat: ProductCategory) => {
-    if (!confirm(`Delete category "${cat.name}"? This cannot be undone.`)) return;
-    setError('');
+    const ok = await confirmDialog({
+      title: 'Delete category',
+      message: `Delete category "${cat.name}"? This cannot be undone.`,
+      confirmLabel: 'Delete',
+      destructive: true,
+    });
+    if (!ok) return;
     const result = await deleteCategory(cat.id);
-    if (result.error) { setError(result.error); }
-    else { setCategories((prev) => prev.filter((c) => c.id !== cat.id)); }
+    if (result.error) {
+      toast.error(result.error);
+    } else {
+      setCategories((prev) => prev.filter((c) => c.id !== cat.id));
+      toast.success(`Category "${cat.name}" deleted.`);
+    }
   };
 
   const handleDragEnd = async (event: DragEndEvent) => {

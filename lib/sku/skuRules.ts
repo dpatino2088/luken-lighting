@@ -1,0 +1,493 @@
+// ──────────────────────────────────────────────────────────────────────────
+//  SKU Rules — White Label SKU Generator (Lighting Fixtures)
+//  Ported from the SpecBuilder project. Single source of truth for segment
+//  options, translation maps and the SKU / description builder.
+// ──────────────────────────────────────────────────────────────────────────
+
+export interface SkuOption {
+  /** Code stored in the SKU / used as the option value. */
+  value: string;
+  /** Human label shown in the dropdown. */
+  label: string;
+  /** Optional optgroup the option belongs to. */
+  group?: string;
+}
+
+/** Mutable shape of the form state that feeds the builder. */
+export interface SkuState {
+  series: string;
+  dim: string;        // standard format code or 'CUSTOM'
+  dimCustom: string;  // custom dimension when dim === 'CUSTOM'
+  shape: string;
+  length: string;     // linear only (shape === 'L')
+  source: string;
+  socket: string;
+  socketCustom: string; // custom socket when socket === 'CUSTOM'
+  trim: string;
+  color: string;
+  cri: string;
+  criCustom: string;  // custom CRI (e.g. 97) when cri === 'CUSTOM'
+  cct: string;
+  cctCustom: string;  // custom CCT in Kelvin (e.g. 3300 or 2700-6500) when cct === 'CUSTOM'
+  optic: string;     // standard beam code or 'CUSTOM'
+  opticCustom: string; // custom beam angle (degrees) when optic === 'CUSTOM'
+  watts: string;
+  wattsCustom: string; // custom wattage (e.g. 18) when watts === 'CUSTOM'
+  driver: string;
+  driverV: string;      // standard voltage/current code or 'CUSTOM'
+  driverVCustom: string; // custom voltage/current when driverV === 'CUSTOM'
+  ctrl: string;
+  version: string;
+}
+
+export const EMPTY_SKU_STATE: SkuState = {
+  series: '',
+  dim: '',
+  dimCustom: '',
+  shape: '',
+  length: '',
+  source: '',
+  socket: '',
+  socketCustom: '',
+  trim: '',
+  color: '',
+  cri: '',
+  criCustom: '',
+  cct: '',
+  cctCustom: '',
+  optic: '',
+  opticCustom: '',
+  watts: '',
+  wattsCustom: '',
+  driver: '',
+  driverV: '',
+  driverVCustom: '',
+  ctrl: '',
+  version: '',
+};
+
+// ── Translation maps (code → human description) ─────────────────────────────
+export const T = {
+  source: { LED: 'LED', HAL: 'Halogen', RTF: 'Retrofit', MOD: 'Module' },
+  socket: {
+    MOD: 'integrated module',
+    GU10: 'GU10 socket',
+    'GU5.3': 'GU5.3 socket',
+    E26: 'E26 socket',
+    E27: 'E27 socket',
+    G13: 'G13 (T8)',
+    G5: 'G5 (T5)',
+  },
+  trim: { TRM: 'Trimmed', TRL: 'Trimless' },
+  color: {
+    WH: 'White',
+    BK: 'Black',
+    BZ: 'Bronze',
+    GD: 'Gold',
+    CH: 'Chrome',
+    SN: 'Satin Nickel',
+    GR: 'Gray',
+    'WH/BK': 'White trim / Black diffuser',
+    'BK/WH': 'Black trim / White diffuser',
+    'BZ/WH': 'Bronze trim / White diffuser',
+    'GD/WH': 'Gold trim / White diffuser',
+  },
+  cri: { CR80: 'CRI 80+', CR90: 'CRI 90+', CR95: 'CRI 95+', CR100: 'CRI 100' },
+  cct: {
+    CT22: '2200K warm amber',
+    CT27: '2700K warm white',
+    CT30: '3000K soft white',
+    CT35: '3500K neutral',
+    CT40: '4000K cool white',
+    CT50: '5000K daylight',
+    CTUN: 'Tunable white',
+  },
+  optic: {
+    OP10: '10° beam',
+    OP15: '15° beam',
+    OP24: '24° beam',
+    OP25: '25° beam',
+    OP36: '36° beam',
+    OP50: '50° beam',
+    OP60: '60° beam',
+    OP90: '90° beam',
+    OP112: '112° beam',
+  },
+  watts: {
+    WT3: '3W',
+    WT4: '4W',
+    WT6: '6W',
+    WT7: '7W',
+    WT9: '9W',
+    WT10: '10W',
+    WT12: '12W',
+    WT13: '13W',
+    WT15: '15W',
+    WT20: '20W',
+    WT30: '30W',
+    WT35: '35W',
+    WT50: '50W',
+  },
+  driver: {
+    INT: 'Integrated driver',
+    EXT: 'External driver',
+    RMCC: 'Remote CC driver',
+    RMCV: 'Remote CV driver',
+  },
+  driverV: {
+    '120V': '120V',
+    '240V': '240V',
+    '277V': '277V',
+    '48V': '48V DC',
+    '24V': '24V DC',
+    '12V': '12V DC',
+    '32V': '32V AC',
+    '180MA': '180mA',
+    '250MA': '250mA',
+    '350MA': '350mA',
+    '500MA': '500mA',
+    '700MA': '700mA',
+    '900MA': '900mA',
+    '1000MA': '1000mA',
+  },
+  ctrl: {
+    ND: 'Non-dimmable',
+    PHD: 'Phase dimmable',
+    '010': '0–10V dimming',
+    DALI: 'DALI',
+    DMX: 'DMX',
+    RFD: 'RF dimmable',
+  },
+  shape: { R: 'Round', S: 'Square', L: 'Linear', RT: 'Rectangular' },
+  version: { V2: 'Version 2', V3: 'Version 3', V4: 'Version 4' },
+} as const;
+
+type TMap = keyof typeof T;
+
+function translate(map: TMap, key: string): string | null {
+  if (!key) return null;
+  const dict = T[map] as Record<string, string>;
+  return dict[key] ?? key;
+}
+
+/** Human label for a color code (e.g. "WH" → "White", "WH/BK" → "White trim / Black diffuser"). */
+export function skuColorName(code: string): string {
+  const c = code.trim();
+  if (!c) return '';
+  return (T.color as Record<string, string>)[c] ?? c;
+}
+
+/** Readable Driver / Control summary from the SKU (e.g. "Remote CC driver / 120V / 0–10V dimming"). */
+export function skuDriverControlText(state: SkuState): string {
+  const parts: string[] = [];
+  const driver = state.driver.trim();
+  if (driver) parts.push((T.driver as Record<string, string>)[driver] ?? driver);
+  const driverV =
+    state.driverV === 'CUSTOM' ? state.driverVCustom.trim() : state.driverV.trim();
+  if (driverV) {
+    parts.push(
+      state.driverV === 'CUSTOM' ? driverV : ((T.driverV as Record<string, string>)[driverV] ?? driverV),
+    );
+  }
+  const ctrl = state.ctrl.trim();
+  if (ctrl) parts.push((T.ctrl as Record<string, string>)[ctrl] ?? ctrl);
+  return parts.join(' / ');
+}
+
+// ── Dropdown option lists (with optgroups where the HTML used them) ──────────
+export const DIM_OPTIONS: SkuOption[] = [
+  { value: 'MR16', label: 'MR16', group: 'Standard lamp formats' },
+  { value: 'MR11', label: 'MR11', group: 'Standard lamp formats' },
+  { value: 'A19', label: 'A19', group: 'Standard lamp formats' },
+  { value: 'A21', label: 'A21', group: 'Standard lamp formats' },
+  { value: 'PAR16', label: 'PAR16', group: 'Standard lamp formats' },
+  { value: 'PAR20', label: 'PAR20', group: 'Standard lamp formats' },
+  { value: 'PAR30', label: 'PAR30', group: 'Standard lamp formats' },
+  { value: 'PAR38', label: 'PAR38', group: 'Standard lamp formats' },
+  { value: 'BR30', label: 'BR30', group: 'Standard lamp formats' },
+  { value: 'BR40', label: 'BR40', group: 'Standard lamp formats' },
+  { value: 'T8', label: 'T8', group: 'Standard lamp formats' },
+  { value: 'T5', label: 'T5', group: 'Standard lamp formats' },
+  { value: 'CUSTOM', label: 'Custom — enter below', group: 'Custom size' },
+];
+
+export const SHAPE_OPTIONS: SkuOption[] = [
+  { value: 'R', label: 'R – Round' },
+  { value: 'S', label: 'S – Square' },
+  { value: 'L', label: 'L – Linear' },
+  { value: 'RT', label: 'RT – Rectangular' },
+];
+
+export const SOURCE_OPTIONS: SkuOption[] = [
+  { value: 'LED', label: 'LED' },
+  { value: 'HAL', label: 'HAL – Halogen' },
+  { value: 'RTF', label: 'RTF – Retrofit' },
+  { value: 'MOD', label: 'MOD – Module' },
+];
+
+export const SOCKET_OPTIONS: SkuOption[] = [
+  { value: 'MOD', label: 'MOD – Integrated module' },
+  { value: 'GU10', label: 'GU10' },
+  { value: 'GU5.3', label: 'GU5.3 (MR16)' },
+  { value: 'E26', label: 'E26' },
+  { value: 'E27', label: 'E27' },
+  { value: 'G13', label: 'G13 (T8)' },
+  { value: 'G5', label: 'G5 (T5)' },
+  { value: 'CUSTOM', label: 'Custom — enter below' },
+];
+
+export const TRIM_OPTIONS: SkuOption[] = [
+  { value: 'TRM', label: 'TRM – Trimmed' },
+  { value: 'TRL', label: 'TRL – Trimless' },
+];
+
+export const COLOR_OPTIONS: SkuOption[] = [
+  { value: 'WH', label: 'WH – White', group: 'Single color' },
+  { value: 'BK', label: 'BK – Black', group: 'Single color' },
+  { value: 'BZ', label: 'BZ – Bronze', group: 'Single color' },
+  { value: 'GD', label: 'GD – Gold', group: 'Single color' },
+  { value: 'CH', label: 'CH – Chrome', group: 'Single color' },
+  { value: 'SN', label: 'SN – Satin Nickel', group: 'Single color' },
+  { value: 'GR', label: 'GR – Gray', group: 'Single color' },
+  { value: 'WH/BK', label: 'WH/BK – White trim · Black diffuser', group: 'Two-tone (Trim / Diffuser)' },
+  { value: 'BK/WH', label: 'BK/WH – Black trim · White diffuser', group: 'Two-tone (Trim / Diffuser)' },
+  { value: 'BZ/WH', label: 'BZ/WH – Bronze trim · White diffuser', group: 'Two-tone (Trim / Diffuser)' },
+  { value: 'GD/WH', label: 'GD/WH – Gold trim · White diffuser', group: 'Two-tone (Trim / Diffuser)' },
+];
+
+export const CRI_OPTIONS: SkuOption[] = [
+  { value: 'CR80', label: 'CR80 – CRI 80+' },
+  { value: 'CR90', label: 'CR90 – CRI 90+' },
+  { value: 'CR95', label: 'CR95 – CRI 95+' },
+  { value: 'CR100', label: 'CR100 – CRI 100' },
+  { value: 'CUSTOM', label: 'Custom — enter below' },
+];
+
+export const CCT_OPTIONS: SkuOption[] = [
+  { value: 'CT22', label: 'CT22 – 2200K warm amber' },
+  { value: 'CT27', label: 'CT27 – 2700K warm white' },
+  { value: 'CT30', label: 'CT30 – 3000K soft white' },
+  { value: 'CT35', label: 'CT35 – 3500K neutral' },
+  { value: 'CT40', label: 'CT40 – 4000K cool white' },
+  { value: 'CT50', label: 'CT50 – 5000K daylight' },
+  { value: 'CTUN', label: 'CTUN – Tunable white' },
+  { value: 'CUSTOM', label: 'Custom — enter below' },
+];
+
+/** Parse a custom CCT string ("3300", "2700-6500", "2700K–6500K") into Kelvin min/max. */
+export function cctKelvinFromCustom(raw: string): { min: number | null; max: number | null } {
+  const nums = ((raw || '').match(/\d+(?:\.\d+)?/g) || []).map(Number).filter((n) => Number.isFinite(n));
+  if (nums.length === 0) return { min: null, max: null };
+  if (nums.length === 1) return { min: nums[0], max: nums[0] };
+  return { min: Math.min(...nums), max: Math.max(...nums) };
+}
+
+export const OPTIC_OPTIONS: SkuOption[] = [
+  { value: 'OP10', label: 'OP10 – 10°' },
+  { value: 'OP15', label: 'OP15 – 15°' },
+  { value: 'OP24', label: 'OP24 – 24°' },
+  { value: 'OP25', label: 'OP25 – 25°' },
+  { value: 'OP36', label: 'OP36 – 36°' },
+  { value: 'OP50', label: 'OP50 – 50°' },
+  { value: 'OP60', label: 'OP60 – 60°' },
+  { value: 'OP90', label: 'OP90 – 90°' },
+  { value: 'OP112', label: 'OP112 – 112°' },
+  { value: 'CUSTOM', label: 'Custom — enter below' },
+];
+
+export const WATTS_OPTIONS: SkuOption[] = [
+  { value: 'WT3', label: 'WT3 – 3W' },
+  { value: 'WT4', label: 'WT4 – 4W' },
+  { value: 'WT6', label: 'WT6 – 6W' },
+  { value: 'WT7', label: 'WT7 – 7W' },
+  { value: 'WT9', label: 'WT9 – 9W' },
+  { value: 'WT10', label: 'WT10 – 10W' },
+  { value: 'WT12', label: 'WT12 – 12W' },
+  { value: 'WT13', label: 'WT13 – 13W' },
+  { value: 'WT15', label: 'WT15 – 15W' },
+  { value: 'WT20', label: 'WT20 – 20W' },
+  { value: 'WT30', label: 'WT30 – 30W' },
+  { value: 'WT35', label: 'WT35 – 35W' },
+  { value: 'WT50', label: 'WT50 – 50W' },
+  { value: 'CUSTOM', label: 'Custom — enter below' },
+];
+
+export const DRIVER_OPTIONS: SkuOption[] = [
+  { value: 'INT', label: 'INT – Integrated' },
+  { value: 'EXT', label: 'EXT – External' },
+  { value: 'RMCC', label: 'RMCC – Remote constant current' },
+  { value: 'RMCV', label: 'RMCV – Remote constant voltage' },
+];
+
+export const DRIVER_V_OPTIONS: SkuOption[] = [
+  { value: '120V', label: '120V', group: 'Voltage' },
+  { value: '240V', label: '240V', group: 'Voltage' },
+  { value: '277V', label: '277V', group: 'Voltage' },
+  { value: '48V', label: '48V DC', group: 'Voltage' },
+  { value: '24V', label: '24V DC', group: 'Voltage' },
+  { value: '12V', label: '12V DC', group: 'Voltage' },
+  { value: '32V', label: '32V AC', group: 'Voltage' },
+  { value: '180MA', label: '180mA', group: 'Constant current' },
+  { value: '250MA', label: '250mA', group: 'Constant current' },
+  { value: '350MA', label: '350mA', group: 'Constant current' },
+  { value: '500MA', label: '500mA', group: 'Constant current' },
+  { value: '700MA', label: '700mA', group: 'Constant current' },
+  { value: '900MA', label: '900mA', group: 'Constant current' },
+  { value: '1000MA', label: '1000mA', group: 'Constant current' },
+  { value: 'CUSTOM', label: 'Custom — enter below', group: 'Custom' },
+];
+
+export const CTRL_OPTIONS: SkuOption[] = [
+  { value: 'ND', label: 'ND – Non-dimmable' },
+  { value: 'PHD', label: 'PHD – Phase dimmable' },
+  { value: '010', label: '010 – 0–10V dimming' },
+  { value: 'DALI', label: 'DALI' },
+  { value: 'DMX', label: 'DMX' },
+  { value: 'RFD', label: 'RFD – RF dimmable' },
+];
+
+export const VERSION_OPTIONS: SkuOption[] = [
+  { value: 'V2', label: 'V2' },
+  { value: 'V3', label: 'V3' },
+  { value: 'V4', label: 'V4' },
+];
+
+// ── Builder ─────────────────────────────────────────────────────────────────
+export interface SkuSegment {
+  val: string;
+  inShort: boolean;
+  desc: string | null;
+}
+
+export interface SkuResult {
+  shortCode: string;
+  longCode: string;
+  /** Short SKU raw segments after the series, space-joined (e.g. "65R GU10 WH").
+   *  Used to build the commercial Name as `${productName} ${shortBody}`. */
+  shortBody: string;
+  shortDesc: string;
+  longDesc: string;
+  segments: SkuSegment[];
+}
+
+/**
+ * Build SHORT + LONG SKU codes and human descriptions from form state.
+ */
+export function buildSku(state: SkuState): SkuResult {
+  const dimRaw = state.dim === 'CUSTOM' ? state.dimCustom.trim() : state.dim.trim();
+  const shape = state.shape.trim();
+  const length = state.length.trim();
+  const driver = state.driver.trim();
+  const driverVIsCustom = state.driverV === 'CUSTOM';
+  // Code segment: sanitized custom text (e.g. "48V DC" → "48VDC") or the standard code.
+  const driverVCode = driverVIsCustom
+    ? state.driverVCustom.trim().toUpperCase().replace(/\s+/g, '')
+    : state.driverV.trim();
+  // Human label: the custom text as typed, or the translated standard label.
+  const driverVLabel = driverVIsCustom
+    ? state.driverVCustom.trim()
+    : (state.driverV.trim() ? (T.driverV[state.driverV.trim() as keyof typeof T.driverV] || state.driverV.trim()) : '');
+  const series = state.series.trim();
+
+  const segs: SkuSegment[] = [];
+  const add = (val: string, inShort: boolean, desc: string | null) => {
+    if (val) segs.push({ val, inShort, desc });
+  };
+
+  // 1 · Series — part of the SKU code only. It is NOT added to the descriptions
+  // (desc = null) because the product Name already carries the family/series.
+  add(series, true, null);
+
+  // 2 · Size + shape
+  let dimSeg = dimRaw;
+  if (dimSeg && shape) dimSeg += shape;
+  let dimDesc: string | null = dimRaw ? dimRaw : null;
+  if (dimDesc && shape) dimDesc += ' ' + (T.shape[shape as keyof typeof T.shape] || shape);
+  if (length && shape === 'L' && dimDesc) dimDesc += ' ' + length + 'mm';
+  add(dimSeg, true, dimDesc);
+
+  // 3 · Length (linear only — already merged into dimDesc)
+  if (shape === 'L' && length) add(length, true, null);
+
+  // 4 · Source / socket / trim / color (short + long)
+  add(state.source.trim(), true, translate('source', state.source.trim()));
+  // Socket — standard code or a custom socket type (e.g. GX53, R7s).
+  if (state.socket === 'CUSTOM') {
+    const raw = (state.socketCustom || '').trim();
+    const code = raw.toUpperCase().replace(/\s+/g, '');
+    if (code) add(code, true, `${raw} socket`);
+  } else {
+    add(state.socket.trim(), true, translate('socket', state.socket.trim()));
+  }
+  add(state.trim.trim(), true, translate('trim', state.trim.trim()));
+  add(state.color.trim(), true, translate('color', state.color.trim()));
+
+  // 5 · Long-only segments
+  // CRI — standard code or a custom value (e.g. 97).
+  if (state.cri === 'CUSTOM') {
+    const n = (state.criCustom || '').replace(/[^0-9]/g, '');
+    if (n) add(`CR${n}`, false, `CRI ${n}+`);
+  } else {
+    add(state.cri.trim(), false, translate('cri', state.cri.trim()));
+  }
+  // CCT — standard code or a custom Kelvin value / range.
+  if (state.cct === 'CUSTOM') {
+    const { min, max } = cctKelvinFromCustom(state.cctCustom);
+    if (min != null) {
+      const isRange = max != null && max !== min;
+      const code = isRange ? 'CTUN' : `CT${Math.round(min / 100)}`;
+      const label = isRange ? `${min}K–${max}K tunable` : `${min}K`;
+      add(code, false, label);
+    }
+  } else {
+    add(state.cct.trim(), false, translate('cct', state.cct.trim()));
+  }
+
+  // Optic / beam — standard code or a custom angle (e.g. 11°, 13°).
+  if (state.optic === 'CUSTOM') {
+    const deg = (state.opticCustom || '').replace(/[^0-9.]/g, '');
+    if (deg) add(`OP${deg}`, false, `${deg}° beam`);
+  } else {
+    add(state.optic.trim(), false, translate('optic', state.optic.trim()));
+  }
+
+  // Watts — standard code or a custom wattage (e.g. 18).
+  if (state.watts === 'CUSTOM') {
+    const n = (state.wattsCustom || '').replace(/[^0-9.]/g, '');
+    if (n) add(`WT${n}`, false, `${n}W`);
+  } else {
+    add(state.watts.trim(), false, translate('watts', state.watts.trim()));
+  }
+
+  if (driver) {
+    const driverDesc =
+      (translate('driver', driver) ?? '') + (driverVLabel ? ' / ' + driverVLabel : '');
+    add(driver, false, driverDesc);
+    if (driverVCode) add(driverVCode, false, null); // desc already merged above
+  }
+
+  add(state.ctrl.trim(), false, translate('ctrl', state.ctrl.trim()));
+  add(state.version.trim(), false, translate('version', state.version.trim()));
+
+  const shortSegs = segs.filter((s) => s.inShort).map((s) => s.val);
+  const longSegs = segs.map((s) => s.val);
+  // Name body = short raw segments without the leading series code.
+  const shortBody = (series && shortSegs[0] === series ? shortSegs.slice(1) : shortSegs).join(' ');
+  const shortDesc = segs
+    .filter((s) => s.inShort && s.desc)
+    .map((s) => s.desc)
+    .join(' / ');
+  const longDesc = segs
+    .filter((s) => s.desc)
+    .map((s) => s.desc)
+    .join(' / ');
+
+  return {
+    shortCode: shortSegs.join('-'),
+    longCode: longSegs.join('-'),
+    shortBody,
+    shortDesc,
+    longDesc,
+    segments: segs,
+  };
+}

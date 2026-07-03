@@ -9,6 +9,8 @@ import {
   updateSiteImageAltText,
   deleteSiteImage,
 } from '@/app/(admin)/admin/images/actions';
+import { confirmDialog } from '@/components/ui/ConfirmDialog';
+import { toast } from '@/components/ui/Toast';
 import type { SiteImage } from '@/lib/types';
 
 const STORAGE_BUCKET = 'site-images';
@@ -22,19 +24,17 @@ export function SiteImageCard({ image: initialImage }: Props) {
   const [altText, setAltText] = useState(initialImage.alt_text || '');
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const altTextChanged = altText !== (image.alt_text || '');
 
   const handleUpload = async (file: File) => {
     setUploading(true);
-    setError('');
 
     try {
       const supabase = createClient();
       if (!supabase) {
-        setError('Supabase not configured');
+        toast.error('Supabase not configured');
         setUploading(false);
         return;
       }
@@ -47,7 +47,7 @@ export function SiteImageCard({ image: initialImage }: Props) {
         .upload(filePath, file, { upsert: true });
 
       if (uploadError) {
-        setError(`Upload failed: ${uploadError.message}`);
+        toast.error(`Upload failed: ${uploadError.message}`);
         setUploading(false);
         return;
       }
@@ -63,49 +63,56 @@ export function SiteImageCard({ image: initialImage }: Props) {
       );
 
       if (result.error) {
-        setError(result.error);
+        toast.error(result.error);
       } else {
         setImage((prev) => ({
           ...prev,
           image_url: urlData.publicUrl,
           alt_text: altText || file.name,
         }));
+        toast.success('Image uploaded.');
       }
     } catch (err: any) {
-      setError(err.message || 'Upload failed');
+      toast.error(err.message || 'Upload failed');
     }
     setUploading(false);
   };
 
   const handleDelete = async () => {
-    if (!confirm(`Remove image for "${image.label}"?`)) return;
+    const ok = await confirmDialog({
+      title: 'Remove image',
+      message: `Remove image for "${image.label}"?`,
+      confirmLabel: 'Remove',
+      destructive: true,
+    });
+    if (!ok) return;
 
-    setError('');
     try {
       const result = await deleteSiteImage(image.key);
       if (result.error) {
-        setError(result.error);
+        toast.error(result.error);
       } else {
         setImage((prev) => ({ ...prev, image_url: null, alt_text: null }));
         setAltText('');
+        toast.success('Image removed.');
       }
     } catch (err: any) {
-      setError(err.message || 'Delete failed');
+      toast.error(err.message || 'Delete failed');
     }
   };
 
   const handleSaveAltText = async () => {
     setSaving(true);
-    setError('');
     try {
       const result = await updateSiteImageAltText(image.key, altText);
       if (result.error) {
-        setError(result.error);
+        toast.error(result.error);
       } else {
         setImage((prev) => ({ ...prev, alt_text: altText }));
+        toast.success('Alt text saved.');
       }
     } catch (err: any) {
-      setError(err.message || 'Save failed');
+      toast.error(err.message || 'Save failed');
     }
     setSaving(false);
   };
@@ -152,12 +159,6 @@ export function SiteImageCard({ image: initialImage }: Props) {
             <p className="text-xs text-gray-500 mt-0.5">{image.description}</p>
           )}
         </div>
-
-        {error && (
-          <p className="text-xs text-red-600 bg-red-50 p-2 border border-red-200">
-            {error}
-          </p>
-        )}
 
         {/* Alt text */}
         <div>

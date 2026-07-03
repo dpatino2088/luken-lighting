@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/Input';
 import { updateProduct } from '@/app/(admin)/admin/products/actions';
 import { createClient } from '@/lib/supabase/client';
 import { slugify } from '@/lib/utils';
+import { toast } from '@/components/ui/Toast';
 import type { Product, ProductCategory } from '@/lib/types';
 
 interface Props {
@@ -31,12 +32,10 @@ function ImageUploadSlot({
   imageKey: string;
 }) {
   const [uploading, setUploading] = useState(false);
-  const [error, setError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleUpload = async (file: File) => {
     setUploading(true);
-    setError('');
 
     try {
       const supabase = createClient();
@@ -58,7 +57,7 @@ function ImageUploadSlot({
 
       onUrlChange(urlData.publicUrl);
     } catch (err: any) {
-      setError(err.message || 'Upload failed');
+      toast.error(err.message || 'Upload failed');
     }
     setUploading(false);
   };
@@ -101,12 +100,6 @@ function ImageUploadSlot({
         accept="image/*"
         onChange={onFileSelected}
       />
-
-      {error && (
-        <div className="p-2 bg-red-50 border border-red-200 text-red-700 text-xs mb-3">
-          {error}
-        </div>
-      )}
 
       {currentUrl ? (
         <div className="relative group border border-gray-200 inline-block">
@@ -163,14 +156,10 @@ export function ProductEditForm({ product, categories }: Props) {
   const [environment, setEnvironment] = useState(product.environment || '');
   const [heroImageUrl, setHeroImageUrl] = useState(product.hero_image_url || '');
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [error, setError] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
-    setError('');
-    setSaved(false);
 
     const formData = new FormData();
     formData.set('name', name.trim());
@@ -183,10 +172,9 @@ export function ProductEditForm({ product, categories }: Props) {
 
     const result = await updateProduct(product.id, formData);
     if (result.error) {
-      setError(result.error);
+      toast.error(result.error);
     } else {
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
+      toast.success('Product saved.');
     }
     setSaving(false);
   };
@@ -208,17 +196,6 @@ export function ProductEditForm({ product, categories }: Props) {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-6 bg-white border border-gray-200 p-8">
-        {error && (
-          <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-sm">
-            {error}
-          </div>
-        )}
-        {saved && (
-          <div className="p-3 bg-green-50 border border-green-200 text-green-700 text-sm">
-            Saved.
-          </div>
-        )}
-
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">Name</label>
           <Input

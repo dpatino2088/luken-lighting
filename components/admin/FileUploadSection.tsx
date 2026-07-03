@@ -1,10 +1,13 @@
 'use client';
 
 import { useState, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { Upload, FileText, Image as ImageIcon, FileSpreadsheet, Box, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { createClient } from '@/lib/supabase/client';
 import { saveVariantAsset, deleteVariantAsset } from '@/app/(admin)/admin/variants/actions';
+import { confirmDialog } from '@/components/ui/ConfirmDialog';
+import { toast } from '@/components/ui/Toast';
 import type { ProductAsset } from '@/lib/types';
 
 const IMAGE_BUCKET_TYPES = new Set(['image', 'installed_image', 'dimensions_image', 'photometric_image']);
@@ -14,6 +17,7 @@ const ASSET_TYPES = [
   { value: 'installed_image', label: 'Product Installed Image', icon: ImageIcon, bucket: 'product-images', accept: 'image/*' },
   { value: 'dimensions_image', label: 'Product Dimensions Image', icon: ImageIcon, bucket: 'product-images', accept: 'image/*' },
   { value: 'photometric_image', label: 'Photometric Curve Image', icon: ImageIcon, bucket: 'product-images', accept: 'image/*' },
+  { value: 'datasheet', label: 'Spec Sheet / Datasheet (PDF)', icon: FileText, bucket: 'documents', accept: '.pdf' },
   { value: 'photometric', label: 'IES Photometric File', icon: FileSpreadsheet, bucket: 'documents', accept: '.ies,.ldt' },
   { value: 'manual', label: 'Installation Manual', icon: FileText, bucket: 'documents', accept: '.pdf' },
   { value: 'line_drawing', label: 'Line Drawing (DWG/DXF)', icon: FileText, bucket: 'documents', accept: '.dwg,.dxf,.pdf,.svg' },
@@ -28,15 +32,14 @@ interface Props {
 }
 
 export function FileUploadSection({ productId, assets: initialAssets }: Props) {
+  const router = useRouter();
   const [assets, setAssets] = useState<ProductAsset[]>(initialAssets);
   const [uploading, setUploading] = useState<string | null>(null);
-  const [error, setError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedType, setSelectedType] = useState('');
 
   const handleUpload = async (assetType: string, file: File) => {
     setUploading(assetType);
-    setError('');
 
     try {
       const supabase = createClient();
@@ -52,7 +55,7 @@ export function FileUploadSection({ productId, assets: initialAssets }: Props) {
         .upload(filePath, file, { upsert: true });
 
       if (uploadError) {
-        setError(`Upload failed: ${uploadError.message}`);
+        toast.error(`Upload failed: ${uploadError.message}`);
         setUploading(null);
         return;
       }
@@ -65,18 +68,27 @@ export function FileUploadSection({ productId, assets: initialAssets }: Props) {
       const result = await saveVariantAsset(productId, assetType, title, urlData.publicUrl, ext);
 
       if (result.error) {
-        setError(result.error);
+        toast.error(result.error);
       } else if (result.asset) {
         setAssets((prev) => [...prev, result.asset as ProductAsset]);
+        toast.success('File uploaded.');
+        // Refresh server data so the Preview tab picks up the new asset.
+        router.refresh();
       }
     } catch (err: any) {
-      setError(err.message || 'Upload failed');
+      toast.error(err.message || 'Upload failed');
     }
     setUploading(null);
   };
 
   const handleDelete = async (asset: ProductAsset) => {
-    if (!confirm(`Delete "${asset.title}"?`)) return;
+    const ok = await confirmDialog({
+      title: 'Delete file',
+      message: `Delete "${asset.title}"?`,
+      confirmLabel: 'Delete',
+      destructive: true,
+    });
+    if (!ok) return;
 
     try {
       const supabase = createClient();
@@ -93,12 +105,15 @@ export function FileUploadSection({ productId, assets: initialAssets }: Props) {
 
       const result = await deleteVariantAsset(asset.id, productId);
       if (result.error) {
-        setError(result.error);
+        toast.error(result.error);
       } else {
         setAssets((prev) => prev.filter((a) => a.id !== asset.id));
+        toast.success(`"${asset.title}" deleted.`);
+        // Refresh server data so the Preview tab drops the removed asset.
+        router.refresh();
       }
     } catch (err: any) {
-      setError(err.message || 'Delete failed');
+      toast.error(err.message || 'Delete failed');
     }
   };
 
@@ -132,12 +147,6 @@ export function FileUploadSection({ productId, assets: initialAssets }: Props) {
         className="hidden"
         onChange={onFileSelected}
       />
-
-      {error && (
-        <div className="p-3 bg-red-50 border border-red-200 text-red-800 text-sm">
-          {error}
-        </div>
-      )}
 
       <div className="space-y-4">
         {groupedAssets.map((group) => {

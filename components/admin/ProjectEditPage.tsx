@@ -14,6 +14,8 @@ import {
   linkProduct,
   unlinkProduct,
 } from '@/app/(admin)/admin/inspiration/actions';
+import { confirmDialog } from '@/components/ui/ConfirmDialog';
+import { toast } from '@/components/ui/Toast';
 import type { InspirationProject, ProjectImage, Product } from '@/lib/types';
 
 const STORAGE_BUCKET = 'site-images';
@@ -47,8 +49,6 @@ export function ProjectEditPage({
   const [photographer, setPhotographer] = useState(project.photographer || '');
 
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [error, setError] = useState('');
 
   // --- Gallery state ---
   const [uploading, setUploading] = useState(false);
@@ -64,8 +64,6 @@ export function ProjectEditPage({
   const handleSaveDetails = async () => {
     if (!name.trim()) return;
     setSaving(true);
-    setError('');
-    setSaved(false);
 
     const fd = new FormData();
     fd.set('name', name.trim());
@@ -80,7 +78,7 @@ export function ProjectEditPage({
 
     const result = await updateProject(project.id, fd);
     if (result.error) {
-      setError(result.error);
+      toast.error(result.error);
     } else {
       setProject((prev) => ({
         ...prev,
@@ -94,8 +92,7 @@ export function ProjectEditPage({
         client_name: clientName.trim() || null,
         photographer: photographer.trim() || null,
       }));
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
+      toast.success('Project saved.');
     }
     setSaving(false);
   };
@@ -104,12 +101,11 @@ export function ProjectEditPage({
 
   const handleGalleryUpload = async (file: File) => {
     setUploading(true);
-    setError('');
 
     try {
       const supabase = createClient();
       if (!supabase) {
-        setError('Supabase not configured');
+        toast.error('Supabase not configured');
         setUploading(false);
         return;
       }
@@ -122,7 +118,7 @@ export function ProjectEditPage({
         .upload(filePath, file, { upsert: true });
 
       if (uploadError) {
-        setError(`Upload failed: ${uploadError.message}`);
+        toast.error(`Upload failed: ${uploadError.message}`);
         setUploading(false);
         return;
       }
@@ -133,12 +129,12 @@ export function ProjectEditPage({
 
       const result = await addProjectImage(project.id, urlData.publicUrl);
       if (result.error) {
-        setError(result.error);
+        toast.error(result.error);
       } else if (result.image) {
         setImages((prev) => [...prev, result.image as ProjectImage]);
       }
     } catch (err: any) {
-      setError(err.message || 'Upload failed');
+      toast.error(err.message || 'Upload failed');
     }
     setUploading(false);
   };
@@ -150,12 +146,17 @@ export function ProjectEditPage({
   };
 
   const handleDeleteImage = async (imageId: string) => {
-    if (!confirm('Delete this image?')) return;
-    setError('');
+    const ok = await confirmDialog({
+      title: 'Delete image',
+      message: 'Delete this image?',
+      confirmLabel: 'Delete',
+      destructive: true,
+    });
+    if (!ok) return;
 
     const result = await deleteProjectImage(imageId);
     if (result.error) {
-      setError(result.error);
+      toast.error(result.error);
     } else {
       setImages((prev) => prev.filter((img) => img.id !== imageId));
     }
@@ -177,11 +178,10 @@ export function ProjectEditPage({
 
   const handleLink = async (productId: string) => {
     setLinking(true);
-    setError('');
 
     const result = await linkProduct(project.id, productId);
     if (result.error) {
-      setError(result.error);
+      toast.error(result.error);
     } else {
       const product = allProducts.find((p) => p.id === productId);
       if (product) {
@@ -192,11 +192,9 @@ export function ProjectEditPage({
   };
 
   const handleUnlink = async (productId: string) => {
-    setError('');
-
     const result = await unlinkProduct(project.id, productId);
     if (result.error) {
-      setError(result.error);
+      toast.error(result.error);
     } else {
       setLinked((prev) => prev.filter((p) => p.id !== productId));
     }
@@ -218,12 +216,6 @@ export function ProjectEditPage({
         </h1>
         <p className="text-sm text-gray-500 mt-1">{project.slug}</p>
       </div>
-
-      {error && (
-        <div className="p-3 bg-red-50 border border-red-200 text-red-800 text-sm">
-          {error}
-        </div>
-      )}
 
       {/* Section A: Project Details */}
       <section className="bg-white border border-gray-200 p-6 space-y-5">
@@ -261,7 +253,6 @@ export function ProjectEditPage({
           >
             {saving ? 'Saving...' : 'Save Details'}
           </Button>
-          {saved && <span className="text-sm text-green-600">Saved</span>}
         </div>
       </section>
 

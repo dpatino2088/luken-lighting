@@ -8,6 +8,8 @@ import {
   updateEntityImage,
   deleteEntityImage,
 } from '@/app/(admin)/admin/images/actions';
+import { confirmDialog } from '@/components/ui/ConfirmDialog';
+import { toast } from '@/components/ui/Toast';
 
 const STORAGE_BUCKET = 'site-images';
 
@@ -30,7 +32,6 @@ export function EntityImageCard({
 }: Props) {
   const [imageUrl, setImageUrl] = useState(initialUrl);
   const [uploading, setUploading] = useState(false);
-  const [error, setError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const folderPrefix =
@@ -44,12 +45,11 @@ export function EntityImageCard({
 
   const handleUpload = async (file: File) => {
     setUploading(true);
-    setError('');
 
     try {
       const supabase = createClient();
       if (!supabase) {
-        setError('Supabase not configured');
+        toast.error('Supabase not configured');
         setUploading(false);
         return;
       }
@@ -62,7 +62,7 @@ export function EntityImageCard({
         .upload(filePath, file, { upsert: true });
 
       if (uploadError) {
-        setError(`Upload failed: ${uploadError.message}`);
+        toast.error(`Upload failed: ${uploadError.message}`);
         setUploading(false);
         return;
       }
@@ -79,29 +79,36 @@ export function EntityImageCard({
       );
 
       if (result.error) {
-        setError(result.error);
+        toast.error(result.error);
       } else {
         setImageUrl(urlData.publicUrl);
+        toast.success('Image uploaded.');
       }
     } catch (err: any) {
-      setError(err.message || 'Upload failed');
+      toast.error(err.message || 'Upload failed');
     }
     setUploading(false);
   };
 
   const handleDelete = async () => {
-    if (!confirm(`Remove image for "${entityName}"?`)) return;
+    const ok = await confirmDialog({
+      title: 'Remove image',
+      message: `Remove image for "${entityName}"?`,
+      confirmLabel: 'Remove',
+      destructive: true,
+    });
+    if (!ok) return;
 
-    setError('');
     try {
       const result = await deleteEntityImage(table, entityId, field);
       if (result.error) {
-        setError(result.error);
+        toast.error(result.error);
       } else {
         setImageUrl(null);
+        toast.success('Image removed.');
       }
     } catch (err: any) {
-      setError(err.message || 'Delete failed');
+      toast.error(err.message || 'Delete failed');
     }
   };
 
@@ -142,12 +149,6 @@ export function EntityImageCard({
 
       <div className="p-4 space-y-3">
         <h3 className="text-sm font-medium">{displayLabel}</h3>
-
-        {error && (
-          <p className="text-xs text-red-600 bg-red-50 p-2 border border-red-200">
-            {error}
-          </p>
-        )}
 
         <div className="flex gap-2">
           <Button

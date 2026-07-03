@@ -5,14 +5,25 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
+// Admin routes that must remain reachable WITHOUT an active session.
+const PUBLIC_ADMIN_PATHS = ['/admin/login', '/admin/forgot-password', '/admin/reset-password'];
+
+function isPublicAdminPath(pathname: string): boolean {
+  return PUBLIC_ADMIN_PATHS.some((p) => pathname === p || pathname.startsWith(p + '/'));
+}
+
+function isProtectedAdminPath(pathname: string): boolean {
+  return pathname.startsWith('/admin') && !isPublicAdminPath(pathname);
+}
+
 export async function updateSession(request: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  const pathname = request.nextUrl.pathname;
 
   // If Supabase is not configured, allow all requests (except admin routes)
   if (!url || !key || url.includes('placeholder') || key.includes('placeholder')) {
-    // Still protect admin routes - redirect to login if not on login page
-    if (request.nextUrl.pathname.startsWith('/admin') && !request.nextUrl.pathname.startsWith('/admin/login')) {
+    if (isProtectedAdminPath(pathname)) {
       const loginUrl = request.nextUrl.clone();
       loginUrl.pathname = '/admin/login';
       return NextResponse.redirect(loginUrl);
@@ -51,9 +62,8 @@ export async function updateSession(request: NextRequest) {
     } = await supabase.auth.getUser();
 
     // Protect admin routes
-    if (request.nextUrl.pathname.startsWith('/admin') && !request.nextUrl.pathname.startsWith('/admin/login')) {
+    if (isProtectedAdminPath(pathname)) {
       if (!user) {
-        // No user, redirect to login
         const loginUrl = request.nextUrl.clone();
         loginUrl.pathname = '/admin/login';
         return NextResponse.redirect(loginUrl);
@@ -61,14 +71,14 @@ export async function updateSession(request: NextRequest) {
     }
 
     // Redirect logged-in users away from login page
-    if (request.nextUrl.pathname === '/admin/login' && user) {
+    if (pathname === '/admin/login' && user) {
       const dashboardUrl = request.nextUrl.clone();
       dashboardUrl.pathname = '/admin/dashboard';
       return NextResponse.redirect(dashboardUrl);
     }
   } catch (error) {
     // If there's an error with Supabase, still allow the request but protect admin routes
-    if (request.nextUrl.pathname.startsWith('/admin') && !request.nextUrl.pathname.startsWith('/admin/login')) {
+    if (isProtectedAdminPath(pathname)) {
       const loginUrl = request.nextUrl.clone();
       loginUrl.pathname = '/admin/login';
       return NextResponse.redirect(loginUrl);
@@ -91,4 +101,3 @@ export async function updateSession(request: NextRequest) {
 
   return supabaseResponse;
 }
-

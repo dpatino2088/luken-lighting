@@ -599,65 +599,25 @@ export function VariantView({
               )}
             </div>
 
-            {/* Key specs summary — datasheet style */}
-            <div className="border border-gray-200 divide-y divide-gray-100">
-              {(variant.power_w_system || variant.power_w) && (
-                <div className="flex justify-between px-5 py-3">
-                  <span className="text-sm text-gray-500">Power</span>
-                  <span className="text-sm font-medium text-gray-900">
-                    {[variant.power_w && `${variant.power_w}W (src)`, variant.power_w_system && `${variant.power_w_system}W (sys)`].filter(Boolean).join(' / ')}
-                  </span>
+            {/* Overview — family description (detailed specs live in the tab below) */}
+            {variant.product?.description && (
+              <div>
+                <h2 className="text-xs font-semibold uppercase tracking-widest text-gray-400 mb-4">
+                  Overview
+                </h2>
+                <div className="space-y-2">
+                  {variant.product.description
+                    .split('\n')
+                    .filter((line: string) => line.trim())
+                    .map((line: string, i: number) => (
+                      <div key={i} className="flex gap-3 text-sm text-gray-600 leading-relaxed">
+                        <span className="text-gray-300 mt-1 flex-shrink-0">•</span>
+                        <span>{line.trim()}</span>
+                      </div>
+                    ))}
                 </div>
-              )}
-              {(variant.lumens_system || variant.lumens) && (
-                <div className="flex justify-between px-5 py-3">
-                  <span className="text-sm text-gray-500">Lumens</span>
-                  <span className="text-sm font-medium text-gray-900">
-                    {[variant.lumens && `${variant.lumens}lm (src)`, variant.lumens_system && `${variant.lumens_system}lm (sys)`].filter(Boolean).join(' / ')}
-                  </span>
-                </div>
-              )}
-              {(efficacySrc || efficacySys) && (
-                <div className="flex justify-between px-5 py-3">
-                  <span className="text-sm text-gray-500">Efficacy</span>
-                  <span className="text-sm font-medium text-gray-900">
-                    {[efficacySrc && `${efficacySrc} (src)`, efficacySys && `${efficacySys} (sys)`].filter(Boolean).join(' / ')}
-                  </span>
-                </div>
-              )}
-              {(variant.cct_min || variant.cct_max) && (
-                <div className="flex justify-between px-5 py-3">
-                  <span className="text-sm text-gray-500">CCT</span>
-                  <span className="text-sm font-medium text-gray-900">{formatCCT(variant.cct_min, variant.cct_max)}</span>
-                </div>
-              )}
-              {variant.cri && (
-                <div className="flex justify-between px-5 py-3">
-                  <span className="text-sm text-gray-500">CRI</span>
-                  <span className="text-sm font-medium text-gray-900">{formatCRI(variant.cri)}</span>
-                </div>
-              )}
-              {variant.beam_angle && (
-                <div className="flex justify-between px-5 py-3">
-                  <span className="text-sm text-gray-500">Beam Angle</span>
-                  <span className="text-sm font-medium text-gray-900">{variant.beam_angle}°</span>
-                </div>
-              )}
-              {variant.control_types && variant.control_types.length > 0 && (
-                <div className="flex justify-between px-5 py-3">
-                  <span className="text-sm text-gray-500">Control</span>
-                  <span className="text-sm font-medium text-gray-900">
-                    {variant.control_types.map((ct: string) => CONTROL_LABELS[ct] || ct).join(', ')}
-                  </span>
-                </div>
-              )}
-              {variant.dimensions && (
-                <div className="flex justify-between px-5 py-3">
-                  <span className="text-sm text-gray-500">Dimensions</span>
-                  <span className="text-sm font-medium text-gray-900">{formatDimensions(variant.dimensions)}</span>
-                </div>
-              )}
-            </div>
+              </div>
+            )}
 
           </div>
         </div>

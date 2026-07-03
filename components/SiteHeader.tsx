@@ -13,6 +13,7 @@ const navigation = [
   { name: 'Inspiration', href: '/inspiration' },
   { name: 'About Luken', href: '/about' },
   { name: 'Resources', href: '/professionals' },
+  { name: 'Portal', href: '/admin/login' },
 ];
 
 export function SiteHeader() {

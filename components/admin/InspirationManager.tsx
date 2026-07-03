@@ -26,6 +26,8 @@ import {
   deleteProject,
   updateProjectSortOrder,
 } from '@/app/(admin)/admin/inspiration/actions';
+import { confirmDialog } from '@/components/ui/ConfirmDialog';
+import { toast } from '@/components/ui/Toast';
 import type { InspirationProject } from '@/lib/types';
 
 interface Props {
@@ -154,11 +156,20 @@ export function InspirationManager({ initialProjects }: Props) {
   const handleDelete = async (e: React.MouseEvent, project: InspirationProject) => {
     e.preventDefault();
     e.stopPropagation();
-    if (!confirm(`Delete project "${project.name}"? This will also remove all its images and product links.`)) return;
-    setError('');
+    const ok = await confirmDialog({
+      title: 'Delete project',
+      message: `Delete project "${project.name}"? This will also remove all its images and product links.`,
+      confirmLabel: 'Delete',
+      destructive: true,
+    });
+    if (!ok) return;
     const result = await deleteProject(project.id);
-    if (result.error) { setError(result.error); }
-    else { setProjects((prev) => prev.filter((p) => p.id !== project.id)); }
+    if (result.error) {
+      toast.error(result.error);
+    } else {
+      setProjects((prev) => prev.filter((p) => p.id !== project.id));
+      toast.success(`Project "${project.name}" deleted.`);
+    }
   };
 
   const handleDragEnd = async (event: DragEndEvent) => {

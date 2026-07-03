@@ -3,64 +3,20 @@
 import { createClient } from '@/lib/supabase/server';
 import { revalidatePath } from 'next/cache';
 import { slugify } from '@/lib/utils';
+import { buildSku } from '@/lib/sku/skuRules';
+import { specSheetToVariantFields } from '@/lib/sku/mapToLuken';
+import type { SpecSheetData } from '@/lib/sku/specSheet';
 
-const CCT_SPECIAL_TO_NUM: Record<string, number> = { 'RGB': -1, 'RGBW': -2, 'RGBWW': -3, 'RGB+CCT': -4, 'CCT': -5 };
 const IMAGE_BUCKET_TYPES = new Set(['image', 'installed_image', 'dimensions_image', 'photometric_image']);
-
-function parseCctValue(value: string | null): { min: number | null; max: number | null } {
-  if (!value) return { min: null, max: null };
-  if (CCT_SPECIAL_TO_NUM[value] != null) return { min: CCT_SPECIAL_TO_NUM[value], max: null };
-  const range = value.match(/^(\d+)K-(\d+)K$/);
-  if (range) return { min: parseInt(range[1]), max: parseInt(range[2]) };
-  const single = value.match(/^(\d+)K$/);
-  if (single) return { min: parseInt(single[1]), max: null };
-  return { min: null, max: null };
-}
 
 export async function updateVariant(variantId: string, formData: FormData) {
   const supabase = await createClient();
   if (!supabase) return { error: 'Supabase not configured' };
 
-  const productId = (formData.get('product_id') as string) || null;
-  let categoryId = (formData.get('category_id') as string) || null;
-  let environment = (formData.get('environment') as string) || null;
-
-  if (productId) {
-    const { data: product } = await supabase
-      .from('products')
-      .select('category_id, environment')
-      .eq('id', productId)
-      .single();
-    if (product?.category_id) categoryId = product.category_id;
-    if (product?.environment) environment = product.environment;
-  }
-
-  const code = formData.get('code') as string;
-
+  // Pricing / status. (Relationships — family/category/environment — are owned by
+  // the Builder tab in the embedded editor, so we only touch them here when the
+  // standalone form actually submits them.)
   const data: Record<string, any> = {
-    name: code,
-    code,
-    slug: slugify(code),
-    category_id: categoryId,
-    environment,
-    product_id: productId,
-    mounting_type: formData.get('mounting_type') || null,
-    ip_rating: formData.get('ip_rating') || null,
-    light_source: formData.get('light_source') || null,
-    power_w: formData.get('power_w') ? Number(formData.get('power_w')) : null,
-    power_w_system: formData.get('power_w_system') ? Number(formData.get('power_w_system')) : null,
-    lumens: formData.get('lumens') ? Number(formData.get('lumens')) : null,
-    lumens_system: formData.get('lumens_system') ? Number(formData.get('lumens_system')) : null,
-    efficacy_lm_per_w: formData.get('efficacy_lm_per_w') ? Number(formData.get('efficacy_lm_per_w')) : null,
-    cct_min: parseCctValue(formData.get('cct_value') as string).min,
-    cct_max: parseCctValue(formData.get('cct_value') as string).max,
-    cri: formData.get('cri') ? Number(formData.get('cri')) : null,
-    beam_angle: formData.get('beam_angle') ? Number(formData.get('beam_angle')) : null,
-    control_types: formData.getAll('control_types').filter(Boolean) as string[],
-    voltage: formData.get('voltage') || null,
-    class: formData.get('class') || null,
-    material: formData.get('material') || null,
-    finish: formData.get('finish') || null,
     manufacturer: formData.get('manufacturer') || null,
     manufacturer_sku: formData.get('manufacturer_sku') || null,
     cost_usd: formData.get('cost_usd') ? Number(formData.get('cost_usd')) : null,
@@ -69,17 +25,25 @@ export async function updateVariant(variantId: string, formData: FormData) {
     is_featured: formData.getAll('is_featured').includes('true'),
   };
 
-  const dimWidth = formData.get('dim_width');
-  const dimHeight = formData.get('dim_height');
-  const dimLength = formData.get('dim_length');
-  const dimWeight = formData.get('dim_weight');
+  if (formData.has('product_id')) {
+    const productId = (formData.get('product_id') as string) || null;
+    let categoryId = (formData.get('category_id') as string) || null;
+    let environment = (formData.get('environment') as string) || null;
 
-  const dimensions: Record<string, number> = {};
-  if (dimWidth) dimensions.width_mm = Number(dimWidth);
-  if (dimHeight) dimensions.height_mm = Number(dimHeight);
-  if (dimLength) dimensions.length_mm = Number(dimLength);
-  if (dimWeight) dimensions.weight_kg = Number(dimWeight);
-  data.dimensions = Object.keys(dimensions).length > 0 ? dimensions : null;
+    if (productId) {
+      const { data: product } = await supabase
+        .from('products')
+        .select('category_id, environment')
+        .eq('id', productId)
+        .single();
+      if (product?.category_id) categoryId = product.category_id;
+      if (product?.environment) environment = product.environment;
+    }
+
+    data.product_id = productId;
+    data.category_id = categoryId;
+    data.environment = environment;
+  }
 
   const { error } = await supabase
     .from('product_variants')
@@ -87,6 +51,121 @@ export async function updateVariant(variantId: string, formData: FormData) {
     .eq('id', variantId);
 
   if (error) return { error: error.message };
+
+  revalidatePath(`/admin/variants/${variantId}`);
+  revalidatePath('/admin/variants');
+  revalidatePath('/products');
+  return { success: true };
+}
+
+/**
+ * Save the SKU/spec-sheet builder for an existing variant. Updates only the
+ * variant identity (code / name / slug / descriptions — Luken's source of
+ * truth for the SKU) and upserts the spec_sheet (ficha + SKU state for
+ * re-edit). Technical specs & pricing stay owned by the Details form.
+ */
+export async function saveVariantBuilder(
+  variantId: string,
+  data: SpecSheetData,
+  rel?: { product_id?: string | null; category_id?: string | null; environment?: string | null }
+) {
+  const supabase = await createClient();
+  if (!supabase) return { error: 'Supabase not configured' };
+
+  const r = buildSku(data.sku);
+  const code = (data.code || r.shortCode).trim();
+  if (!code) return { error: 'A SKU code is required (complete at least the Series).' };
+  const name = (data.name || data.productName).trim() || code;
+
+  // Builder is the source of truth for identity + technical specs + dimensions.
+  // In the tabbed editor it also owns the family relationship (product_id) and
+  // the inherited category/environment.
+  const vf = specSheetToVariantFields(data, null);
+  const updatePayload: Record<string, any> = {
+    code,
+    name,
+    slug: slugify(code),
+    short_description: data.codeDescription || r.shortDesc,
+    long_description: data.description || r.longDesc,
+    light_source: vf.light_source,
+    power_w: vf.power_w,
+    power_w_system: vf.power_w_system,
+    lumens: vf.lumens,
+    lumens_system: vf.lumens_system,
+    efficacy_lm_per_w: vf.efficacy_lm_per_w,
+    cct_min: vf.cct_min,
+    cct_max: vf.cct_max,
+    cri: vf.cri,
+    beam_angle: vf.beam_angle,
+    voltage: vf.voltage,
+    finish: vf.finish,
+    material: vf.material,
+    ip_rating: vf.ip_rating,
+    class: vf.class,
+    control_types: vf.control_types,
+    mounting_type: vf.mounting_type,
+    dimensions: vf.dimensions,
+  };
+
+  if (rel) {
+    const productId = rel.product_id || null;
+    let categoryId = rel.category_id || null;
+    let environment = rel.environment || null;
+
+    if (productId) {
+      const { data: product } = await supabase
+        .from('products')
+        .select('category_id, environment')
+        .eq('id', productId)
+        .single();
+      if (product?.category_id) categoryId = product.category_id;
+      if (product?.environment) environment = product.environment;
+    }
+
+    updatePayload.product_id = productId;
+    updatePayload.category_id = categoryId;
+    updatePayload.environment = environment;
+  }
+
+  const { error: vErr } = await supabase
+    .from('product_variants')
+    .update(updatePayload)
+    .eq('id', variantId);
+  if (vErr) return { error: vErr.message };
+
+  await supabase.from('product_skus').update({ code, name }).eq('variant_id', variantId);
+
+  const { data: variant } = await supabase
+    .from('product_variants')
+    .select('product_id')
+    .eq('id', variantId)
+    .single();
+
+  const { data: existing } = await supabase
+    .from('spec_sheets')
+    .select('id')
+    .eq('variant_id', variantId)
+    .is('deleted_at', null)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (existing) {
+    await supabase
+      .from('spec_sheets')
+      .update({ product_name: data.productName, code, data, product_id: variant?.product_id ?? null })
+      .eq('id', existing.id);
+  } else {
+    const { data: userRes } = await supabase.auth.getUser();
+    await supabase.from('spec_sheets').insert({
+      variant_id: variantId,
+      product_id: variant?.product_id ?? null,
+      product_name: data.productName,
+      code,
+      data,
+      created_by: userRes.user?.id ?? null,
+    });
+  }
 
   revalidatePath(`/admin/variants/${variantId}`);
   revalidatePath('/admin/variants');

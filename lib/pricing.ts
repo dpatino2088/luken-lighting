@@ -13,6 +13,20 @@ export function calcMarginPct(cost: number, distributorPrice: number): number {
   return Math.round(((1 - cost / distributorPrice) * 100) * 100) / 100;
 }
 
+/**
+ * Markup-on-cost formula: sellingPrice = cost * (1 + markup/100)
+ * e.g. cost=80, markup=25% -> 80 * 1.25 = 100
+ */
+export function calcPriceFromMarkup(cost: number, markupPct: number): number {
+  return Math.round(cost * (1 + markupPct / 100) * 100) / 100;
+}
+
+/** Reverse: given cost and selling price, what markup % was applied? */
+export function calcMarkupPct(cost: number, price: number): number {
+  if (cost <= 0) return 0;
+  return Math.round((price / cost - 1) * 100 * 100) / 100;
+}
+
 /** MSRP is always 2x the distributor price (distributor keeps 50% margin) */
 export function calcMsrp(distributorPrice: number): number {
   return Math.round(distributorPrice * 2 * 100) / 100;

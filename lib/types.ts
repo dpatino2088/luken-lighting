@@ -274,4 +274,16 @@ export interface VariantFormData {
 
 export interface AppSettings {
   eur_to_usd_rate: number;
+  /** Brand logo shown on the spec sheet header (Preview + PDF). */
+  brand_logo_url: string | null;
+}
+
+export interface Manufacturer {
+  id: string;
+  name: string;
+  country: string | null;
+  currency: string | null;
+  is_active: boolean;
+  created_at?: string;
+  updated_at?: string;
 }

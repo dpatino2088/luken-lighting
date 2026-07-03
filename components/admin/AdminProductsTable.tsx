@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Search, Eye, Edit, Trash2, ImageOff, ChevronLeft, ChevronRight } from 'lucide-react';
 import { deleteProduct } from '@/app/(admin)/admin/products/actions';
+import { toast } from '@/components/ui/Toast';
+import { confirmDialog } from '@/components/ui/ConfirmDialog';
 
 interface ProductRow {
   id: string;
@@ -65,11 +67,18 @@ export function AdminProductsTable({ products, categories }: Props) {
   };
 
   const handleDelete = async (prod: ProductRow) => {
-    if (!confirm(`Delete "${prod.name}"? This cannot be undone.`)) return;
+    const ok = await confirmDialog({
+      title: 'Delete product',
+      message: `Delete "${prod.name}"? This cannot be undone.`,
+      confirmLabel: 'Delete',
+      destructive: true,
+    });
+    if (!ok) return;
     const result = await deleteProduct(prod.id);
     if (result.error) {
-      alert(result.error);
+      toast.error(result.error);
     } else {
+      toast.success(`"${prod.name}" deleted.`);
       router.refresh();
     }
   };

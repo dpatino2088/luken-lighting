@@ -84,7 +84,7 @@ export default function NewProductPage() {
         <h1 className="text-3xl font-light tracking-widest uppercase mb-2">
           Add New Product
         </h1>
-        <p className="text-gray-600">Create a new product</p>
+        <p className="text-gray-600">Create a new product family</p>
       </div>
 
       <div className="bg-white border border-gray-200 p-8">
@@ -133,7 +133,7 @@ export default function NewProductPage() {
             <textarea
               name="description"
               rows={4}
-              placeholder="Brief description of this product"
+              placeholder="Brief description of this product family"
               className="w-full px-4 py-2.5 border border-gray-300 rounded-none focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent placeholder:text-gray-400 text-gray-900"
             />
           </div>
@@ -152,7 +152,7 @@ export default function NewProductPage() {
           </div>
 
           <p className="text-sm text-gray-500">
-            After creating the product, you can upload images and add variants.
+            A product is a family. After creating it, add variants — each variant generates its own SKU, spec sheet and descriptions.
           </p>
         </form>
       </div>

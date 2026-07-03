@@ -27,6 +27,8 @@ import {
   updateProductSortOrder,
 } from '@/app/(admin)/admin/products/actions';
 import Link from 'next/link';
+import { confirmDialog } from '@/components/ui/ConfirmDialog';
+import { toast } from '@/components/ui/Toast';
 import type { Product, ProductCategory } from '@/lib/types';
 
 interface Props {
@@ -167,11 +169,20 @@ export function ProductFamiliesManager({ initialProducts, categories }: Props) {
   };
 
   const handleDelete = async (prod: Product) => {
-    if (!confirm(`Delete product "${prod.name}"? This cannot be undone.`)) return;
-    setError('');
+    const ok = await confirmDialog({
+      title: 'Delete product',
+      message: `Delete product "${prod.name}"? This cannot be undone.`,
+      confirmLabel: 'Delete',
+      destructive: true,
+    });
+    if (!ok) return;
     const result = await deleteProduct(prod.id);
-    if (result.error) { setError(result.error); }
-    else { setProducts((prev) => prev.filter((p) => p.id !== prod.id)); }
+    if (result.error) {
+      toast.error(result.error);
+    } else {
+      setProducts((prev) => prev.filter((p) => p.id !== prod.id));
+      toast.success(`Product "${prod.name}" deleted.`);
+    }
   };
 
   const handleDragEnd = async (event: DragEndEvent) => {
