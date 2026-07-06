@@ -90,6 +90,8 @@ export interface ProductVariant {
   slug: string;
   name: string;
   code: string;
+  /** Full/long SKU derived from the spec sheet (all segments). Display-only. */
+  full_code?: string;
   short_description: string;
   long_description: string;
   category_id: string;

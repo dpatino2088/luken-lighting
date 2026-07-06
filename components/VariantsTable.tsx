@@ -71,7 +71,7 @@ export function VariantsTable({ variants, productSlug }: VariantsTableProps) {
                     target="_blank"
                     className="text-sm font-medium text-gray-900 hover:text-brand-copper transition-colors"
                   >
-                    {v.code || '—'}
+                    {v.full_code || v.code || '—'}
                   </Link>
                 </td>
                 <td className="px-5 py-3.5 text-sm text-gray-600">
@@ -117,7 +117,7 @@ export function VariantsTable({ variants, productSlug }: VariantsTableProps) {
           >
             <div className="flex items-start justify-between mb-2">
               <div>
-                <p className="text-sm font-medium text-gray-900">{v.code}</p>
+                <p className="text-sm font-medium text-gray-900">{v.full_code || v.code}</p>
               </div>
               <ExternalLink className="h-4 w-4 text-gray-400 flex-shrink-0 mt-0.5" />
             </div>

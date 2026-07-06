@@ -4,7 +4,9 @@ import { Container } from '@/components/ui/Container';
 import { VariantsTable } from '@/components/VariantsTable';
 import { FilterDropdown } from '@/components/FilterDropdown';
 import { createClient } from '@/lib/supabase/server';
+import { createAdminClient } from '@/lib/supabase/admin';
 import { ProductVariant } from '@/lib/types';
+import { buildSku } from '@/lib/sku/skuRules';
 import { formatCCT, formatCRI } from '@/lib/utils';
 import { generateMetadata as genMeta } from '@/lib/seo';
 import { Shield, Lightbulb, ChevronRight } from 'lucide-react';
@@ -57,10 +59,44 @@ export default async function ProductPage({ params, searchParams }: PageProps) {
       .eq('is_active', true)
       .order('name');
 
+    const variantList = (variants as ProductVariant[]) || [];
+
+    // Public "Product Codes" shows the LONG SKU (all segments) so the code alone
+    // identifies the product. The long code lives in the spec sheet SKU state
+    // (spec_sheets.data.sku); we compute it here and fall back to the stored
+    // short `code` for legacy variants that have no spec sheet yet.
+    // spec_sheets is RLS-restricted to authenticated users, so we read it with
+    // the server-only admin client and expose ONLY the derived long code.
+    const ids = variantList.map((v) => v.id);
+    const latestSheet = new Map<string, any>();
+    const sheetReader = createAdminClient() ?? supabase;
+    if (ids.length > 0) {
+      const { data: sheets } = await sheetReader
+        .from('spec_sheets')
+        .select('variant_id, data, updated_at')
+        .in('variant_id', ids)
+        .is('deleted_at', null);
+      for (const s of sheets || []) {
+        const prev = latestSheet.get(s.variant_id);
+        if (!prev || new Date(s.updated_at) > new Date(prev.updated_at)) {
+          latestSheet.set(s.variant_id, s);
+        }
+      }
+    }
+    const enriched = variantList.map((v) => {
+      const sku = latestSheet.get(v.id)?.data?.sku;
+      let full_code = v.code;
+      if (sku) {
+        const r = buildSku(sku);
+        if (r.longCode) full_code = r.longCode;
+      }
+      return { ...v, full_code };
+    });
+
     return (
       <ProductView
         product={product}
-        variants={(variants as ProductVariant[]) || []}
+        variants={enriched}
         filterOptic={filters.optic}
         filterK={filters.k}
         filterCri={filters.cri}

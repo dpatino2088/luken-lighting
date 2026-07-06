@@ -11,6 +11,7 @@ import { VariantBuilderPanel } from '@/components/specsheet/VariantBuilderPanel'
 import { IdentityFields } from '@/components/specsheet/IdentityFields';
 import { useSpecSheetSync } from '@/components/specsheet/useSpecSheetSync';
 import { SheetPreview } from '@/components/specsheet/SheetPreview';
+import { buildSku } from '@/lib/sku/skuRules';
 import { saveVariantBuilder } from '@/app/(admin)/admin/variants/actions';
 import { toast } from '@/components/ui/Toast';
 import type { ProductVariant, ProductCategory, Product, ProductAsset, AppSettings } from '@/lib/types';
@@ -71,8 +72,20 @@ export function VariantEditTabs({
 
   function handlePrint() {
     setTab('preview');
+    // Chrome's "Save as PDF" uses document.title as the default filename.
+    const code = (data.code || buildSku(data.sku).shortCode || variant.code || '').trim();
+    const fileName = code ? `Luken Lighting - ${code}` : 'Luken Lighting - Spec Sheet';
     // Wait for the preview tab to render before invoking the print engine.
-    setTimeout(() => window.print(), 150);
+    setTimeout(() => {
+      const prevTitle = document.title;
+      document.title = fileName;
+      const restore = () => {
+        document.title = prevTitle;
+        window.removeEventListener('afterprint', restore);
+      };
+      window.addEventListener('afterprint', restore);
+      window.print();
+    }, 150);
   }
 
   return (

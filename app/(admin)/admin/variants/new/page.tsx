@@ -147,7 +147,19 @@ export default function NewVariantPage() {
 
   function handlePrint() {
     setTopTab('preview');
-    setTimeout(() => window.print(), 150);
+    // Chrome's "Save as PDF" uses document.title as the default filename.
+    const code = (data.code || buildSku(data.sku).shortCode || '').trim();
+    const fileName = code ? `Luken Lighting - ${code}` : 'Luken Lighting - Spec Sheet';
+    setTimeout(() => {
+      const prevTitle = document.title;
+      document.title = fileName;
+      const restore = () => {
+        document.title = prevTitle;
+        window.removeEventListener('afterprint', restore);
+      };
+      window.addEventListener('afterprint', restore);
+      window.print();
+    }, 150);
   }
 
   return (
