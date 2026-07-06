@@ -3,7 +3,8 @@
 import { useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import { SkuFields } from '@/components/specsheet/SkuFields';
 import { DEFAULT_TECH_ROWS, MONTAJE_OPTIONS, type ConfigRow, type SpecSheetData, type TechRow } from '@/lib/sku/specSheet';
-import { buildSku } from '@/lib/sku/skuRules';
+import { buildSku, cctKelvinFromCustom } from '@/lib/sku/skuRules';
+import { cctRange, criValue, beamValue } from '@/lib/sku/mapToLuken';
 import type { SpecSheetSync } from '@/components/specsheet/useSpecSheetSync';
 
 type SubTab = 'general' | 'config' | 'tech' | 'notes';
@@ -80,6 +81,26 @@ export function VariantBuilderPanel({
     onChange((prev) => ({ ...prev, datosTecnicos: DEFAULT_TECH_ROWS.map((r) => ({ ...r })) }));
 
   const skuPreview = useMemo(() => buildSku(data.sku), [data.sku]);
+
+  // Values the sheet auto-fills from the Builder (Light quality). Shown here as
+  // read-only rows so the Technical data tab is never blank/confusing and the
+  // user can see exactly what will appear on the ficha without retyping it.
+  const derivedTech = useMemo(() => {
+    const rows: { campo: string; valor: string; unidad: string }[] = [];
+    const cct = data.sku.cct === 'CUSTOM' ? cctKelvinFromCustom(data.sku.cctCustom) : cctRange(data.sku.cct);
+    if (cct.min != null) {
+      rows.push({
+        campo: 'Color temperature',
+        valor: cct.max != null && cct.max !== cct.min ? `${cct.min}–${cct.max}` : `${cct.min}`,
+        unidad: 'K',
+      });
+    }
+    const cri = criValue(data.sku.cri === 'CUSTOM' ? data.sku.criCustom : data.sku.cri);
+    if (cri != null) rows.push({ campo: 'CRI', valor: `${cri}+`, unidad: 'Ra' });
+    const beam = beamValue(data.sku.optic === 'CUSTOM' ? data.sku.opticCustom : data.sku.optic);
+    if (beam != null) rows.push({ campo: 'Beam angle', valor: `${beam}`, unidad: '°' });
+    return rows;
+  }, [data.sku]);
 
   return (
     <div className="space-y-4">
@@ -236,7 +257,7 @@ export function VariantBuilderPanel({
                 onClick={resetTech}
                 className="border border-gray-300 px-2.5 py-1 text-[11px] font-medium text-gray-600 hover:border-gray-400"
               >
-                Reset defaults
+                Load default fields
               </button>
               <button type="button" onClick={addTech} className="bg-gray-900 text-white px-2.5 py-1 text-[11px] font-medium hover:bg-gray-700">
                 + Row
@@ -249,8 +270,30 @@ export function VariantBuilderPanel({
             measured</strong> values (system / source lumens &amp; wattage, efficacy, MacAdam step, lifetime).
             Note: a “Source wattage” row overrides the nominal Power set in the Builder.
           </p>
+
+          {/* Read-only preview of the values auto-filled from the Builder. */}
+          {derivedTech.length > 0 && (
+            <div className="border border-gray-200 bg-gray-50 p-3 space-y-2">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+                From Builder (auto-added to sheet)
+              </p>
+              {derivedTech.map((t, i) => (
+                <div key={`d-${i}`} className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <input className={`${fieldClass} bg-gray-100 text-gray-500`} value={t.campo} readOnly tabIndex={-1} />
+                  <input className={`${fieldClass} bg-gray-100 text-gray-500`} value={t.valor} readOnly tabIndex={-1} />
+                  <input className={`${fieldClass} bg-gray-100 text-gray-500`} value={t.unidad} readOnly tabIndex={-1} />
+                </div>
+              ))}
+            </div>
+          )}
+
+          <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 pt-1">
+            Additional measured values
+          </p>
           {data.datosTecnicos.length === 0 && (
-            <p className="text-[11px] text-gray-400 italic">No additional technical data. Use “+ Row” to add fields.</p>
+            <p className="text-[11px] text-gray-400 italic">
+              None yet. Click <strong>“Load default fields”</strong> for the standard template, or “+ Row” to add your own.
+            </p>
           )}
           {data.datosTecnicos.map((t, i) => (
             <div key={i} className="flex items-end gap-2">
