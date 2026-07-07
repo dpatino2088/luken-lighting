@@ -95,37 +95,46 @@ export default async function AboutPage() {
               Our Values
             </h2>
             <div className="grid md:grid-cols-3 gap-12">
-              <div className="text-center">
-                <div className="w-16 h-16 bg-gray-900 mx-auto mb-6" />
-                <h3 className="text-xl font-medium uppercase tracking-wide mb-4">
-                  Design Excellence
-                </h3>
-                <p className="text-gray-600">
-                  Every product is designed with restraint — clean lines and minimal profiles that 
-                  integrate seamlessly into the architecture, letting the space speak for itself.
-                </p>
-              </div>
-              <div className="text-center">
-                <div className="w-16 h-16 bg-gray-900 mx-auto mb-6" />
-                <h3 className="text-xl font-medium uppercase tracking-wide mb-4">
-                  Quality Craftsmanship
-                </h3>
-                <p className="text-gray-600">
-                  Using premium materials and rigorous manufacturing processes, we ensure that 
-                  every fixture meets the highest standards of quality and durability.
-                </p>
-              </div>
-              <div className="text-center">
-                <div className="w-16 h-16 bg-gray-900 mx-auto mb-6" />
-                <h3 className="text-xl font-medium uppercase tracking-wide mb-4">
-                  Innovation
-                </h3>
-                <p className="text-gray-600">
-                  We continuously explore new technologies and integration methods to make our 
-                  fixtures even more discreet — advancing the invisible infrastructure that 
-                  brings spaces to life.
-                </p>
-              </div>
+              {[
+                {
+                  key: 'about_value_1',
+                  title: 'Design Excellence',
+                  text: 'Every product is designed with restraint — clean lines and minimal profiles that integrate seamlessly into the architecture, letting the space speak for itself.',
+                },
+                {
+                  key: 'about_value_2',
+                  title: 'Quality Craftsmanship',
+                  text: 'Using premium materials and rigorous manufacturing processes, we ensure that every fixture meets the highest standards of quality and durability.',
+                },
+                {
+                  key: 'about_value_3',
+                  title: 'Innovation',
+                  text: 'We continuously explore new technologies and integration methods to make our fixtures even more discreet — advancing the invisible infrastructure that brings spaces to life.',
+                },
+              ].map((value) => {
+                const valueImage = siteImages[value.key];
+                return (
+                  <div key={value.key} className="text-center">
+                    {valueImage?.image_url ? (
+                      <div className="relative aspect-square w-full mb-6 overflow-hidden bg-gray-100">
+                        <Image
+                          src={valueImage.image_url}
+                          alt={valueImage.alt_text || value.title}
+                          fill
+                          sizes="(max-width: 768px) 100vw, 33vw"
+                          className="object-cover"
+                        />
+                      </div>
+                    ) : (
+                      <div className="w-16 h-16 bg-gray-900 mx-auto mb-6" />
+                    )}
+                    <h3 className="text-xl font-medium uppercase tracking-wide mb-4">
+                      {value.title}
+                    </h3>
+                    <p className="text-gray-600">{value.text}</p>
+                  </div>
+                );
+              })}
             </div>
           </div>
         </section>

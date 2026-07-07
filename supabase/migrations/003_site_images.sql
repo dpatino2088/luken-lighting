@@ -75,6 +75,9 @@ INSERT INTO site_images (key, label, description, section, sort_order) VALUES
   ('homepage_about', 'Homepage About Image', 'Image next to the About section on the homepage (recommended: 800x600)', 'homepage', 2),
   ('about_hero', 'About Page Hero', 'Hero banner on the About page (recommended: 1920x800)', 'about', 1),
   ('about_story', 'About - Our Story', 'Image next to the Our Story section (recommended: 800x600)', 'about', 2),
+  ('about_value_1', 'About - Value 1 (Design Excellence)', 'Image for the first Our Values card on the About page (recommended: 800x800)', 'about', 3),
+  ('about_value_2', 'About - Value 2 (Quality Craftsmanship)', 'Image for the second Our Values card on the About page (recommended: 800x800)', 'about', 4),
+  ('about_value_3', 'About - Value 3 (Innovation)', 'Image for the third Our Values card on the About page (recommended: 800x800)', 'about', 5),
   ('site_logo', 'Site Logo', 'Main logo displayed in the header (recommended: SVG or 240x62 PNG)', 'general', 1),
   ('og_default', 'Default Social Share Image', 'Default image for social media previews when no specific image is set (recommended: 1200x630)', 'general', 2),
   ('product_placeholder', 'Product Placeholder', 'Fallback image shown when a product has no images (recommended: 800x800)', 'general', 3);
