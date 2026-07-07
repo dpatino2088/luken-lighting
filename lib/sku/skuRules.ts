@@ -357,14 +357,18 @@ export interface SkuSegment {
   val: string;
   inShort: boolean;
   desc: string | null;
+  /** Included in the concise commercial Name (size + source + color). */
+  inName?: boolean;
 }
 
 export interface SkuResult {
   shortCode: string;
   longCode: string;
-  /** Short SKU raw segments after the series, space-joined (e.g. "65R GU10 WH").
-   *  Used to build the commercial Name as `${productName} ${shortBody}`. */
+  /** Short SKU raw segments after the series, space-joined (e.g. "65R GU10 WH"). */
   shortBody: string;
+  /** Concise commercial name body: size + source + color (e.g. "70R LED WH").
+   *  Used to build the Name as `${productName} ${nameBody}`. */
+  nameBody: string;
   shortDesc: string;
   longDesc: string;
   segments: SkuSegment[];
@@ -390,8 +394,8 @@ export function buildSku(state: SkuState): SkuResult {
   const series = state.series.trim();
 
   const segs: SkuSegment[] = [];
-  const add = (val: string, inShort: boolean, desc: string | null) => {
-    if (val) segs.push({ val, inShort, desc });
+  const add = (val: string, inShort: boolean, desc: string | null, inName = false) => {
+    if (val) segs.push({ val, inShort, desc, inName });
   };
 
   // 1 · Series — part of the SKU code only. It is NOT added to the descriptions
@@ -404,13 +408,13 @@ export function buildSku(state: SkuState): SkuResult {
   let dimDesc: string | null = dimRaw ? dimRaw : null;
   if (dimDesc && shape) dimDesc += ' ' + (T.shape[shape as keyof typeof T.shape] || shape);
   if (length && shape === 'L' && dimDesc) dimDesc += ' ' + length + 'mm';
-  add(dimSeg, true, dimDesc);
+  add(dimSeg, true, dimDesc, true);
 
   // 3 · Length (linear only — already merged into dimDesc)
-  if (shape === 'L' && length) add(length, true, null);
+  if (shape === 'L' && length) add(length, true, null, true);
 
   // 4 · Source / socket / trim / color (short + long)
-  add(state.source.trim(), true, translate('source', state.source.trim()));
+  add(state.source.trim(), true, translate('source', state.source.trim()), true);
   // Socket — standard code or a custom socket type (e.g. GX53, R7s).
   if (state.socket === 'CUSTOM') {
     const raw = (state.socketCustom || '').trim();
@@ -419,8 +423,8 @@ export function buildSku(state: SkuState): SkuResult {
   } else {
     add(state.socket.trim(), true, translate('socket', state.socket.trim()));
   }
-  add(state.trim.trim(), true, translate('trim', state.trim.trim()));
-  add(state.color.trim(), true, translate('color', state.color.trim()));
+  add(state.trim.trim(), true, translate('trim', state.trim.trim()), true);
+  add(state.color.trim(), true, translate('color', state.color.trim()), true);
 
   // 5 · Long-only segments
   // CRI — standard code or a custom value (e.g. 97).
@@ -473,6 +477,8 @@ export function buildSku(state: SkuState): SkuResult {
   const longSegs = segs.map((s) => s.val);
   // Name body = short raw segments without the leading series code.
   const shortBody = (series && shortSegs[0] === series ? shortSegs.slice(1) : shortSegs).join(' ');
+  // Concise commercial name body: size + source + trim + color (no series/socket).
+  const nameBody = segs.filter((s) => s.inName).map((s) => s.val).join(' ');
   const shortDesc = segs
     .filter((s) => s.inShort && s.desc)
     .map((s) => s.desc)
@@ -486,6 +492,7 @@ export function buildSku(state: SkuState): SkuResult {
     shortCode: shortSegs.join('-'),
     longCode: longSegs.join('-'),
     shortBody,
+    nameBody,
     shortDesc,
     longDesc,
     segments: segs,

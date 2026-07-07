@@ -167,9 +167,9 @@ export function SheetPreview({
           )}
         </div>
 
-        {/* Code box */}
+        {/* Name box (the SKU code itself lives in the black CODE bar above) */}
         <div className="bg-gray-50 border border-gray-200 p-3">
-          <div className="font-mono text-xs text-gray-900">{code || <Placeholder>—</Placeholder>}</div>
+          <div className="text-sm font-medium text-gray-900">{title || <Placeholder>—</Placeholder>}</div>
           <div className="text-gray-600">{data.codeDescription || <Placeholder>—</Placeholder>}</div>
         </div>
 

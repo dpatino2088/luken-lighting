@@ -75,7 +75,7 @@ export function useSpecSheetSync(
   useEffect(() => {
     onChange((prev) => {
       const r = buildSku(prev.sku);
-      const nextName = [prev.productName.trim(), r.shortBody].filter(Boolean).join(' ');
+      const nextName = [prev.productName.trim(), r.nameBody].filter(Boolean).join(' ');
       const want = {
         name: link.name ? nextName : prev.name,
         code: link.code ? r.shortCode : prev.code,
@@ -115,7 +115,7 @@ export function useSpecSheetSync(
       return {
         ...prev,
         sku: nextSku,
-        name: [prev.productName.trim(), r.shortBody].filter(Boolean).join(' '),
+        name: [prev.productName.trim(), r.nameBody].filter(Boolean).join(' '),
         code: r.shortCode,
         codeDescription: r.shortDesc,
         description: composeDescription(r.longDesc, prev),
