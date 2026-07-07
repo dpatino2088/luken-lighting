@@ -18,7 +18,34 @@ export interface SpecSheetSync {
   relinkAll: () => void;
 }
 
-const derive3 = (name: string) => name.replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase();
+// Series = first 3 letters of EACH word in the family name (joined by "-"),
+// plus any trailing number. e.g.
+//   "Alhena 15"   → "ALH15"
+//   "Santorini"   → "SAN"
+//   "Draco Point" → "DRA-POI"
+//   "Orion 65"    → "ORI65"
+const derive3 = (name: string) => {
+  const cleaned = name.trim();
+  if (!cleaned) return '';
+  const trailingNum = cleaned.match(/(\d+)\s*$/)?.[1] ?? '';
+  const words = cleaned
+    .split(/\s+/)
+    .map((w) => w.replace(/[^A-Za-z]/g, ''))
+    .filter(Boolean)
+    .map((w) => w.slice(0, 3).toUpperCase());
+  return words.join('-') + trailingNum;
+};
+
+// The auto description = SKU long description + the structured product
+// attributes owned by the Builder (mounting type, material, IP rating,
+// electrical class) so the description reflects the full product, not just
+// the SKU segments.
+const composeDescription = (longDesc: string, d: SpecSheetData): string => {
+  const extras = [d.montaje, d.material, d.ipRating, d.electricalClass]
+    .map((s) => (s || '').trim())
+    .filter(Boolean);
+  return [longDesc, ...extras].filter(Boolean).join(' / ');
+};
 
 /**
  * Owns the SKU ↔ identity auto-sync for a spec sheet. Instantiate ONCE in the
@@ -53,7 +80,7 @@ export function useSpecSheetSync(
         name: link.name ? nextName : prev.name,
         code: link.code ? r.shortCode : prev.code,
         codeDescription: link.codeDescription ? r.shortDesc : prev.codeDescription,
-        description: link.description ? r.longDesc : prev.description,
+        description: link.description ? composeDescription(r.longDesc, prev) : prev.description,
       };
       if (
         want.name === prev.name &&
@@ -66,7 +93,7 @@ export function useSpecSheetSync(
       return { ...prev, ...want };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data.sku, data.productName, link]);
+  }, [data.sku, data.productName, data.montaje, data.material, data.ipRating, data.electricalClass, link]);
 
   const setLinkedField = (key: keyof LinkFlags, value: string) => {
     if (link[key]) setLink((prev) => ({ ...prev, [key]: false }));
@@ -91,7 +118,7 @@ export function useSpecSheetSync(
         name: [prev.productName.trim(), r.shortBody].filter(Boolean).join(' '),
         code: r.shortCode,
         codeDescription: r.shortDesc,
-        description: r.longDesc,
+        description: composeDescription(r.longDesc, prev),
       };
     });
   };

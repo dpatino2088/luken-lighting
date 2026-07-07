@@ -79,17 +79,20 @@ export const MONTAJE_OPTIONS = [
 // Only EXTRA measured values live here. CCT, CRI and beam angle are NOT included
 // because they come from the Builder dropdowns and are auto-added to the sheet
 // (see SheetPreview `derivedTech`). Keeping them here would duplicate them.
+// Placeholders use EMPTY values (not "0") so an unfilled template row never
+// writes a bogus 0 into the variant photometric columns. LED lifespan keeps a
+// sensible default text.
 export const DEFAULT_TECH_ROWS: TechRow[] = [
-  { campo: 'System lumens', valor: '0', unidad: 'lm', locked: true },
-  { campo: 'System wattage', valor: '0', unidad: 'W', locked: true },
-  { campo: 'MacAdam step', valor: '0', unidad: 'SDCM', locked: true },
-  { campo: 'Source lumens', valor: '0', unidad: 'lm', locked: true },
+  { campo: 'System lumens', valor: '', unidad: 'lm', locked: true },
+  { campo: 'System wattage', valor: '', unidad: 'W', locked: true },
+  { campo: 'MacAdam step', valor: '', unidad: 'SDCM', locked: true },
+  { campo: 'Source lumens', valor: '', unidad: 'lm', locked: true },
   { campo: 'LED lifespan', valor: '>50,000h L80 B10', unidad: 'h', locked: true },
-  { campo: 'Source wattage', valor: '0', unidad: 'W', locked: true },
-  { campo: 'Luminous efficacy', valor: '0', unidad: 'lm/W', locked: true },
-  { campo: 'Emergency mode lumens', valor: '0', unidad: 'lm', locked: true },
-  { campo: 'Emission flux > 90°', valor: '0', unidad: 'lm', locked: true },
-  { campo: 'Light Output Ratio (L.O.R.)', valor: '0', unidad: '%', locked: true },
+  { campo: 'Source wattage', valor: '', unidad: 'W', locked: true },
+  { campo: 'Luminous efficacy', valor: '', unidad: 'lm/W', locked: true },
+  { campo: 'Emergency mode lumens', valor: '', unidad: 'lm', locked: true },
+  { campo: 'Emission flux > 90°', valor: '', unidad: 'lm', locked: true },
+  { campo: 'Light Output Ratio (L.O.R.)', valor: '', unidad: '%', locked: true },
 ];
 
 export function createDefaultSpecSheet(): SpecSheetData {

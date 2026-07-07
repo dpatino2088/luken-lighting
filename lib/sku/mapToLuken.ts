@@ -115,7 +115,12 @@ export function techRowsToColumns(rows: { campo: string; valor: string }[]): Tec
   const out: TechColumns = { lumens: null, lumens_system: null, power_w: null, power_w_system: null, efficacy_lm_per_w: null };
   for (const row of rows || []) {
     const key = TECH_ROW_TO_COLUMN[(row.campo || '').trim()];
-    if (key) out[key] = techNum(row.valor);
+    if (!key) continue;
+    const n = techNum(row.valor);
+    // A luminaire cannot have 0 lm / 0 W / 0 efficacy. Treat 0 (the value used by
+    // the default template placeholders) as "not provided" so it never overrides
+    // the real derived value with a bogus zero.
+    out[key] = n && n !== 0 ? n : null;
   }
   return out;
 }

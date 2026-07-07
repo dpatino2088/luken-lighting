@@ -75,10 +75,10 @@ export function VariantsTable({ variants, productSlug }: VariantsTableProps) {
                   </Link>
                 </td>
                 <td className="px-5 py-3.5 text-sm text-gray-600">
-                  {(v.power_w_system || v.power_w) ? `${v.power_w_system ?? v.power_w}W` : '—'}
+                  {(v.power_w_system || v.power_w) ? `${v.power_w_system || v.power_w}W` : '—'}
                 </td>
                 <td className="px-5 py-3.5 text-sm text-gray-600">
-                  {(v.lumens_system || v.lumens) ? `${v.lumens_system ?? v.lumens}lm` : '—'}
+                  {(v.lumens_system || v.lumens) ? `${v.lumens_system || v.lumens}lm` : '—'}
                 </td>
                 <td className="px-5 py-3.5 text-sm text-gray-600">
                   {(v.cct_min || v.cct_max) ? formatCCT(v.cct_min, v.cct_max) : '—'}
@@ -122,8 +122,8 @@ export function VariantsTable({ variants, productSlug }: VariantsTableProps) {
               <ExternalLink className="h-4 w-4 text-gray-400 flex-shrink-0 mt-0.5" />
             </div>
             <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600">
-              {(v.power_w_system || v.power_w) && <span>{v.power_w_system ?? v.power_w}W</span>}
-              {(v.lumens_system || v.lumens) && <span>{v.lumens_system ?? v.lumens}lm</span>}
+              {(v.power_w_system || v.power_w) && <span>{v.power_w_system || v.power_w}W</span>}
+              {(v.lumens_system || v.lumens) && <span>{v.lumens_system || v.lumens}lm</span>}
               {(v.cct_min || v.cct_max) && <span>{formatCCT(v.cct_min, v.cct_max)}</span>}
               {v.ip_rating && <span>{v.ip_rating}</span>}
               {v.control_types && v.control_types.length > 0 && (

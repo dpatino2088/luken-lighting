@@ -143,13 +143,15 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
 
         {galleryImages && galleryImages.length > 0 && (
           <div className="mb-20">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Masonry layout: preserves each photo's natural aspect ratio so
+                every image is shown in full (no cropping). */}
+            <div className="columns-1 sm:columns-2 lg:columns-3 gap-2 [column-fill:_balance]">
               {galleryImages.map((img: any) => (
-                <div key={img.id} className="aspect-[4/3] bg-gray-100 overflow-hidden">
+                <div key={img.id} className="mb-2 break-inside-avoid bg-gray-100 overflow-hidden">
                   <img
                     src={img.image_url}
                     alt={img.caption || project.name}
-                    className="w-full h-full object-cover"
+                    className="block w-full h-auto"
                   />
                 </div>
               ))}

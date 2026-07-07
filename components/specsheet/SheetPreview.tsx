@@ -88,11 +88,12 @@ export function SheetPreview({
     beam: 'beam',
   };
   const norm = (s: string) => aliases[s.trim().toLowerCase()] ?? s.trim().toLowerCase();
-  const manualKeys = new Set(manualTech.map((t) => norm(t.campo)));
-  const techRows: TechRow[] = [
-    ...derivedTech.filter((t) => !manualKeys.has(norm(t.campo))),
-    ...manualTech,
-  ];
+  // CCT / CRI / beam angle are ALWAYS taken from the Builder (Light quality).
+  // Drop any manual rows that alias to those fields so stale/legacy rows (e.g.
+  // an old "Color temperature: 0") can never override the real derived value.
+  const derivedKeys = new Set(['cct', 'cri', 'beam']);
+  const manualExtra = manualTech.filter((t) => !derivedKeys.has(norm(t.campo)));
+  const techRows: TechRow[] = [...derivedTech, ...manualExtra];
   const configRows = data.configuraciones.filter((c) => c.codigo || c.descripcion || c.componente);
   const overviewLines = (familyOverview || '')
     .split('\n')
