@@ -4,6 +4,8 @@ import { useState, useRef } from 'react';
 import { Upload, Trash2, Save } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { createClient } from '@/lib/supabase/client';
+import { compressImage } from '@/lib/utils/compressImage';
+import { checkImageSize } from '@/lib/utils/fileSize';
 import {
   updateSiteImage,
   updateSiteImageAltText,
@@ -29,6 +31,11 @@ export function SiteImageCard({ image: initialImage }: Props) {
   const altTextChanged = altText !== (image.alt_text || '');
 
   const handleUpload = async (file: File) => {
+    const sizeError = checkImageSize(file);
+    if (sizeError) {
+      toast.error(sizeError);
+      return;
+    }
     setUploading(true);
 
     try {
@@ -39,12 +46,13 @@ export function SiteImageCard({ image: initialImage }: Props) {
         return;
       }
 
-      const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+      const uploadFile = await compressImage(file, { maxDimension: 2400, quality: 0.85 });
+      const ext = uploadFile.name.split('.').pop()?.toLowerCase() || 'jpg';
       const filePath = `site/${image.key}-${Date.now()}.${ext}`;
 
       const { error: uploadError } = await supabase.storage
         .from(STORAGE_BUCKET)
-        .upload(filePath, file, { upsert: true });
+        .upload(filePath, uploadFile, { upsert: true, cacheControl: '31536000' });
 
       if (uploadError) {
         toast.error(`Upload failed: ${uploadError.message}`);

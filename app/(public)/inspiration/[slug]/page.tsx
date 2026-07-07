@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import { Container } from '@/components/ui/Container';
 import { createClient } from '@/lib/supabase/server';
 import { Product } from '@/lib/types';
@@ -82,10 +83,13 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
     <div className="py-12 lg:py-16">
       <div className="relative h-[50vh] min-h-[400px] bg-gray-900 mb-16 flex items-center justify-center">
         {project.hero_image_url ? (
-          <img
+          <Image
             src={project.hero_image_url}
             alt={project.name}
-            className="absolute inset-0 w-full h-full object-cover opacity-60"
+            fill
+            priority
+            sizes="100vw"
+            className="object-cover opacity-60"
           />
         ) : (
           <div className="absolute inset-0 bg-gradient-to-br from-gray-900 to-gray-800" />
@@ -148,9 +152,12 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
             <div className="columns-1 sm:columns-2 lg:columns-3 gap-2 [column-fill:_balance]">
               {galleryImages.map((img: any) => (
                 <div key={img.id} className="mb-2 break-inside-avoid bg-gray-100 overflow-hidden">
-                  <img
+                  <Image
                     src={img.image_url}
                     alt={img.caption || project.name}
+                    width={1200}
+                    height={900}
+                    sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
                     className="block w-full h-auto"
                   />
                 </div>
@@ -175,10 +182,12 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
                   <div className="space-y-3">
                     <div className="relative aspect-square bg-gray-100 overflow-hidden">
                       {(product.thumbnail_url || product.hero_image_url) ? (
-                        <img
-                          src={product.thumbnail_url || product.hero_image_url || undefined}
+                        <Image
+                          src={product.thumbnail_url || product.hero_image_url || ''}
                           alt={product.name}
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                          fill
+                          sizes="(max-width: 768px) 50vw, 25vw"
+                          className="object-cover group-hover:scale-105 transition-transform duration-500"
                         />
                       ) : (
                         <div className="w-full h-full bg-gradient-to-br from-gray-200 to-gray-100 group-hover:scale-105 transition-transform duration-500" />

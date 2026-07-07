@@ -2,7 +2,7 @@
 
 import { type SpecSheetData, type TechRow } from '@/lib/sku/specSheet';
 import { buildSku, skuColorName, skuDriverControlText, cctKelvinFromCustom } from '@/lib/sku/skuRules';
-import { cctRange, criValue, beamValue } from '@/lib/sku/mapToLuken';
+import { cctRange, criValue, beamValue, wattsValue } from '@/lib/sku/mapToLuken';
 import type { ProductAsset } from '@/lib/types';
 
 function Placeholder({ children }: { children: React.ReactNode }) {
@@ -78,6 +78,8 @@ export function SheetPreview({
   if (cri != null) derivedTech.push({ campo: 'CRI', valor: `${cri}+`, unidad: 'Ra' });
   const beam = beamValue(data.sku.optic === 'CUSTOM' ? data.sku.opticCustom : data.sku.optic);
   if (beam != null) derivedTech.push({ campo: 'Beam angle', valor: `${beam}`, unidad: '°' });
+  const watts = wattsValue(data.sku.watts === 'CUSTOM' ? data.sku.wattsCustom : data.sku.watts);
+  if (watts != null) derivedTech.push({ campo: 'System wattage', valor: `${watts}`, unidad: 'W' });
 
   const aliases: Record<string, string> = {
     'color temperature': 'cct',
@@ -86,12 +88,15 @@ export function SheetPreview({
     'cri (minimum)': 'cri',
     'beam angle': 'beam',
     beam: 'beam',
+    'system wattage': 'watts',
+    power: 'watts',
+    wattage: 'watts',
   };
   const norm = (s: string) => aliases[s.trim().toLowerCase()] ?? s.trim().toLowerCase();
   // CCT / CRI / beam angle are ALWAYS taken from the Builder (Light quality).
   // Drop any manual rows that alias to those fields so stale/legacy rows (e.g.
   // an old "Color temperature: 0") can never override the real derived value.
-  const derivedKeys = new Set(['cct', 'cri', 'beam']);
+  const derivedKeys = new Set(['cct', 'cri', 'beam', 'watts']);
   const manualExtra = manualTech.filter((t) => !derivedKeys.has(norm(t.campo)));
   const techRows: TechRow[] = [...derivedTech, ...manualExtra];
   const configRows = data.configuraciones.filter((c) => c.codigo || c.descripcion || c.componente);

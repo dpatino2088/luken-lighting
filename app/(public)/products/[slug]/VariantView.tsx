@@ -101,9 +101,12 @@ export function VariantView({
                 </h4>
                 {photometricImages.map((img: ProductAsset) => (
                   <div key={img.id} className="border border-gray-200 bg-white p-4">
-                    <img
+                    <Image
                       src={img.file_url}
                       alt={img.title || 'Photometric distribution'}
+                      width={1200}
+                      height={900}
+                      sizes="(max-width: 1024px) 100vw, 33vw"
                       className="w-full h-auto"
                     />
                   </div>
@@ -117,9 +120,12 @@ export function VariantView({
                 </h4>
                 {dimensionsImages.map((img: ProductAsset) => (
                   <div key={img.id} className="border border-gray-200 bg-white p-4">
-                    <img
+                    <Image
                       src={img.file_url}
                       alt={img.title || 'Product dimensions'}
+                      width={1200}
+                      height={900}
+                      sizes="(max-width: 1024px) 100vw, 33vw"
                       className="w-full h-auto"
                     />
                   </div>

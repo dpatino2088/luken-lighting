@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import Image from 'next/image';
 import { Suspense } from 'react';
 import { Container } from '@/components/ui/Container';
 import { ProductSidebar } from '@/components/ProductSidebar';
@@ -159,12 +160,14 @@ export default async function ProductsPage({ searchParams }: ProductsPageProps) 
                     className="group"
                   >
                     <div className="space-y-4">
-                      <div className="aspect-[4/3] bg-gray-100 overflow-hidden">
+                      <div className="relative aspect-[4/3] bg-gray-100 overflow-hidden">
                         {(product.thumbnail_url || product.hero_image_url) ? (
-                          <img
+                          <Image
                             src={product.thumbnail_url || product.hero_image_url!}
                             alt={product.name}
-                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                            fill
+                            sizes="(max-width: 768px) 100vw, (max-width: 1280px) 50vw, 33vw"
+                            className="object-cover group-hover:scale-105 transition-transform duration-500"
                           />
                         ) : (
                           <div className="w-full h-full bg-gradient-to-br from-gray-200 to-gray-100 group-hover:scale-105 transition-transform duration-500" />

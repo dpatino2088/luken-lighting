@@ -58,10 +58,13 @@ export default async function HomePage() {
       <section className="relative h-screen min-h-[600px] bg-gray-900 flex items-center justify-center">
         {siteImages.homepage_hero?.image_url ? (
           <>
-            <img
+            <Image
               src={siteImages.homepage_hero.image_url}
               alt={siteImages.homepage_hero.alt_text || 'Luken Lighting'}
-              className="absolute inset-0 w-full h-full object-cover"
+              fill
+              priority
+              sizes="100vw"
+              className="object-cover"
             />
             <div className="absolute inset-0 bg-black/50" />
           </>
@@ -110,12 +113,14 @@ export default async function HomePage() {
                 href={`/products?category=${category.slug}`}
                 className="group"
               >
-                <div className="aspect-[4/3] bg-gray-100 mb-4 overflow-hidden">
+                <div className="relative aspect-[4/3] bg-gray-100 mb-4 overflow-hidden">
                   {category.hero_image_url ? (
-                    <img
+                    <Image
                       src={category.hero_image_url}
                       alt={category.name}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      fill
+                      sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                      className="object-cover group-hover:scale-105 transition-transform duration-500"
                     />
                   ) : (
                     <div className="w-full h-full bg-gradient-to-br from-gray-200 to-gray-100 group-hover:scale-105 transition-transform duration-500" />
@@ -163,11 +168,13 @@ export default async function HomePage() {
               </div>
             </div>
             {siteImages.homepage_about?.image_url ? (
-              <div className="aspect-[4/3] overflow-hidden">
-                <img
+              <div className="relative aspect-[4/3] overflow-hidden">
+                <Image
                   src={siteImages.homepage_about.image_url}
                   alt={siteImages.homepage_about.alt_text || 'About Luken Lighting'}
-                  className="w-full h-full object-cover"
+                  fill
+                  sizes="(max-width: 768px) 100vw, 50vw"
+                  className="object-cover"
                 />
               </div>
             ) : (
@@ -197,12 +204,14 @@ export default async function HomePage() {
                   href={`/inspiration/${project.slug}`}
                   className="group"
                 >
-                  <div className="aspect-[4/3] bg-gray-100 mb-4 overflow-hidden">
+                  <div className="relative aspect-[4/3] bg-gray-100 mb-4 overflow-hidden">
                     {(project.thumbnail_url || project.hero_image_url) ? (
-                      <img
+                      <Image
                         src={project.thumbnail_url || project.hero_image_url!}
                         alt={project.name}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                        fill
+                        sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                        className="object-cover group-hover:scale-105 transition-transform duration-500"
                       />
                     ) : (
                       <div className="w-full h-full bg-gradient-to-br from-gray-200 to-gray-100 group-hover:scale-105 transition-transform duration-500" />

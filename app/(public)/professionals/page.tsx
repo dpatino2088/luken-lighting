@@ -1,3 +1,4 @@
+import Image from 'next/image';
 import { Container } from '@/components/ui/Container';
 import { createClient } from '@/lib/supabase/server';
 import { getSiteImages } from '@/lib/site-images';
@@ -45,10 +46,13 @@ export default async function ProfessionalsPage() {
       <section className="relative h-[40vh] min-h-[300px] bg-gray-900 mb-16 flex items-center justify-center">
         {siteImages.professionals_hero?.image_url ? (
           <>
-            <img
+            <Image
               src={siteImages.professionals_hero.image_url}
               alt={siteImages.professionals_hero.alt_text || 'Professional Resources'}
-              className="absolute inset-0 w-full h-full object-cover"
+              fill
+              priority
+              sizes="100vw"
+              className="object-cover"
             />
             <div className="absolute inset-0 bg-black/50" />
           </>

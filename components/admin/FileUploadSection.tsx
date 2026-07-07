@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation';
 import { Upload, FileText, Image as ImageIcon, FileSpreadsheet, Box, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { createClient } from '@/lib/supabase/client';
+import { compressImage } from '@/lib/utils/compressImage';
+import { checkImageSize } from '@/lib/utils/fileSize';
 import { saveVariantAsset, deleteVariantAsset } from '@/app/(admin)/admin/variants/actions';
 import { confirmDialog } from '@/components/ui/ConfirmDialog';
 import { toast } from '@/components/ui/Toast';
@@ -39,6 +41,15 @@ export function FileUploadSection({ productId, assets: initialAssets }: Props) {
   const [selectedType, setSelectedType] = useState('');
 
   const handleUpload = async (assetType: string, file: File) => {
+    const isImage = IMAGE_BUCKET_TYPES.has(assetType);
+    // Size guard applies to images only; documents (Revit/3D/etc.) may be large.
+    if (isImage) {
+      const sizeError = checkImageSize(file);
+      if (sizeError) {
+        toast.error(sizeError);
+        return;
+      }
+    }
     setUploading(assetType);
 
     try {
@@ -46,13 +57,18 @@ export function FileUploadSection({ productId, assets: initialAssets }: Props) {
       if (!supabase) throw new Error('Supabase not configured');
       const typeInfo = ASSET_TYPES.find((t) => t.value === assetType);
       const bucket = typeInfo?.bucket || 'documents';
-      const ext = file.name.split('.').pop()?.toLowerCase() || '';
+      // Only raster product images benefit from resize/re-encode; PDFs, IES,
+      // Revit and other documents must be uploaded untouched.
+      const uploadFile = isImage
+        ? await compressImage(file, { maxDimension: 2400, quality: 0.85 })
+        : file;
+      const ext = uploadFile.name.split('.').pop()?.toLowerCase() || '';
       const timestamp = Date.now();
       const filePath = `${productId}/${assetType}-${timestamp}.${ext}`;
 
       const { error: uploadError } = await supabase.storage
         .from(bucket)
-        .upload(filePath, file, { upsert: true });
+        .upload(filePath, uploadFile, { upsert: true, cacheControl: '31536000' });
 
       if (uploadError) {
         toast.error(`Upload failed: ${uploadError.message}`);

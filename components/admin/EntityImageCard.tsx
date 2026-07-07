@@ -4,6 +4,8 @@ import { useState, useRef } from 'react';
 import { Upload, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { createClient } from '@/lib/supabase/client';
+import { compressImage } from '@/lib/utils/compressImage';
+import { checkImageSize } from '@/lib/utils/fileSize';
 import {
   updateEntityImage,
   deleteEntityImage,
@@ -44,6 +46,11 @@ export function EntityImageCard({
   const suffix = field === 'thumbnail_url' ? '-thumb' : '-hero';
 
   const handleUpload = async (file: File) => {
+    const sizeError = checkImageSize(file);
+    if (sizeError) {
+      toast.error(sizeError);
+      return;
+    }
     setUploading(true);
 
     try {
@@ -54,12 +61,18 @@ export function EntityImageCard({
         return;
       }
 
-      const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+      // Thumbnails are shown small (cards/lists), so they can be resized
+      // more aggressively than hero images.
+      const uploadFile = await compressImage(file, {
+        maxDimension: field === 'thumbnail_url' ? 800 : 2400,
+        quality: 0.85,
+      });
+      const ext = uploadFile.name.split('.').pop()?.toLowerCase() || 'jpg';
       const filePath = `${folderPrefix}/${entityId}${suffix}-${Date.now()}.${ext}`;
 
       const { error: uploadError } = await supabase.storage
         .from(STORAGE_BUCKET)
-        .upload(filePath, file, { upsert: true });
+        .upload(filePath, uploadFile, { upsert: true, cacheControl: '31536000' });
 
       if (uploadError) {
         toast.error(`Upload failed: ${uploadError.message}`);

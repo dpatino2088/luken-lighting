@@ -7,6 +7,8 @@ import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { EntityImageCard } from '@/components/admin/EntityImageCard';
 import { createClient } from '@/lib/supabase/client';
+import { compressImage } from '@/lib/utils/compressImage';
+import { checkImageSize } from '@/lib/utils/fileSize';
 import {
   updateProject,
   addProjectImage,
@@ -100,6 +102,11 @@ export function ProjectEditPage({
   // ========== Gallery handlers ==========
 
   const handleGalleryUpload = async (file: File) => {
+    const sizeError = checkImageSize(file);
+    if (sizeError) {
+      toast.error(sizeError);
+      return;
+    }
     setUploading(true);
 
     try {
@@ -110,7 +117,8 @@ export function ProjectEditPage({
         return;
       }
 
-      const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+      const uploadFile = await compressImage(file, { maxDimension: 2400, quality: 0.85 });
+      const ext = uploadFile.name.split('.').pop()?.toLowerCase() || 'jpg';
       // Unique per file: batch uploads fire within the same millisecond, so
       // Date.now() alone collides and (with upsert) every file overwrites the
       // same object → duplicated/single image. A random id guarantees uniqueness.
@@ -122,7 +130,7 @@ export function ProjectEditPage({
 
       const { error: uploadError } = await supabase.storage
         .from(STORAGE_BUCKET)
-        .upload(filePath, file, { upsert: true });
+        .upload(filePath, uploadFile, { upsert: true, cacheControl: '31536000' });
 
       if (uploadError) {
         toast.error(`Upload failed: ${uploadError.message}`);

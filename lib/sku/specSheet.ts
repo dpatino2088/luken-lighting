@@ -76,15 +76,15 @@ export const MONTAJE_OPTIONS = [
   'Underwater',
 ] as const;
 
-// Only EXTRA measured values live here. CCT, CRI and beam angle are NOT included
-// because they come from the Builder dropdowns and are auto-added to the sheet
-// (see SheetPreview `derivedTech`). Keeping them here would duplicate them.
+// Only EXTRA measured values live here. CCT, CRI, beam angle and System wattage
+// are NOT included because they come from the Builder dropdowns and are
+// auto-added to the sheet (see SheetPreview `derivedTech`). Keeping them here
+// would duplicate them.
 // Placeholders use EMPTY values (not "0") so an unfilled template row never
 // writes a bogus 0 into the variant photometric columns. LED lifespan keeps a
 // sensible default text.
 export const DEFAULT_TECH_ROWS: TechRow[] = [
   { campo: 'System lumens', valor: '', unidad: 'lm', locked: true },
-  { campo: 'System wattage', valor: '', unidad: 'W', locked: true },
   { campo: 'MacAdam step', valor: '', unidad: 'SDCM', locked: true },
   { campo: 'Source lumens', valor: '', unidad: 'lm', locked: true },
   { campo: 'LED lifespan', valor: '>50,000h L80 B10', unidad: 'h', locked: true },

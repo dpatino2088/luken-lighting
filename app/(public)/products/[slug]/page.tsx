@@ -1,5 +1,6 @@
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import { Container } from '@/components/ui/Container';
 import { VariantsTable } from '@/components/VariantsTable';
 import { FilterDropdown } from '@/components/FilterDropdown';
@@ -172,10 +173,13 @@ function ProductView({
           {/* Product image */}
           <div className="aspect-[4/3] bg-gray-100 relative overflow-hidden">
             {product.hero_image_url ? (
-              <img
+              <Image
                 src={product.hero_image_url}
                 alt={product.name}
-                className="w-full h-full object-cover"
+                fill
+                priority
+                sizes="(max-width: 1024px) 100vw, 50vw"
+                className="object-cover"
               />
             ) : (
               <div className="w-full h-full bg-gradient-to-br from-gray-200 to-gray-100 flex items-center justify-center">

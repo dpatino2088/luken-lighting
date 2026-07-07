@@ -1,6 +1,7 @@
 import { Container } from '@/components/ui/Container';
 import { Button } from '@/components/ui/Button';
 import Link from 'next/link';
+import Image from 'next/image';
 import { generateMetadataWithCMS } from '@/lib/seo';
 import { getSiteImages } from '@/lib/site-images';
 
@@ -21,10 +22,13 @@ export default async function AboutPage() {
       <section className="relative h-[50vh] min-h-[400px] bg-gray-900 mb-20 flex items-center justify-center">
         {siteImages.about_hero?.image_url ? (
           <>
-            <img
+            <Image
               src={siteImages.about_hero.image_url}
               alt={siteImages.about_hero.alt_text || 'About Luken Lighting'}
-              className="absolute inset-0 w-full h-full object-cover"
+              fill
+              priority
+              sizes="100vw"
+              className="object-cover"
             />
             <div className="absolute inset-0 bg-black/50" />
           </>
@@ -47,11 +51,13 @@ export default async function AboutPage() {
         <section className="mb-20">
           <div className="grid lg:grid-cols-2 gap-16 items-center">
             {siteImages.about_story?.image_url ? (
-              <div className="aspect-[4/3] overflow-hidden">
-                <img
+              <div className="relative aspect-[4/3] overflow-hidden">
+                <Image
                   src={siteImages.about_story.image_url}
                   alt={siteImages.about_story.alt_text || 'Our Story'}
-                  className="w-full h-full object-cover"
+                  fill
+                  sizes="(max-width: 1024px) 100vw, 50vw"
+                  className="object-cover"
                 />
               </div>
             ) : (

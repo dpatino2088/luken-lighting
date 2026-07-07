@@ -177,9 +177,10 @@ export function specSheetToVariantFields(data: SpecSheetData, environment: strin
     short_description: data.codeDescription || r.shortDesc,
     long_description: data.description || r.longDesc,
     light_source: lightSource(data.sku),
-    // Technical Data rows override the SKU nominal wattage when provided.
-    power_w: tech.power_w ?? wattsValue(data.sku.watts === 'CUSTOM' ? data.sku.wattsCustom : data.sku.watts),
-    power_w_system: tech.power_w_system,
+    // The Builder Power (WT13 → 13W) IS the system wattage. A manual "System
+    // wattage" row can still override it; "Source wattage" is an optional extra.
+    power_w: tech.power_w,
+    power_w_system: tech.power_w_system ?? wattsValue(data.sku.watts === 'CUSTOM' ? data.sku.wattsCustom : data.sku.watts),
     lumens: tech.lumens,
     lumens_system: tech.lumens_system,
     efficacy_lm_per_w: tech.efficacy_lm_per_w,

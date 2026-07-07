@@ -4,7 +4,7 @@ import { useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import { SkuFields } from '@/components/specsheet/SkuFields';
 import { DEFAULT_TECH_ROWS, MONTAJE_OPTIONS, type ConfigRow, type SpecSheetData, type TechRow } from '@/lib/sku/specSheet';
 import { buildSku, cctKelvinFromCustom } from '@/lib/sku/skuRules';
-import { cctRange, criValue, beamValue } from '@/lib/sku/mapToLuken';
+import { cctRange, criValue, beamValue, wattsValue } from '@/lib/sku/mapToLuken';
 import type { SpecSheetSync } from '@/components/specsheet/useSpecSheetSync';
 
 type SubTab = 'general' | 'config' | 'tech' | 'notes';
@@ -30,6 +30,14 @@ const MATERIAL_OPTIONS = [
   'Wood',
   'Ceramic',
 ];
+
+// Technical-data fields that are auto-derived from the Builder (Light quality /
+// Power). They must not appear as editable manual rows (single source of truth).
+const DERIVED_TECH_ALIASES = new Set([
+  'color temperature', 'cct', 'cri', 'cri (minimum)', 'beam angle', 'beam',
+  'system wattage', 'power', 'wattage',
+]);
+const isDerivedField = (campo: string) => DERIVED_TECH_ALIASES.has((campo || '').trim().toLowerCase());
 
 const fieldClass =
   'w-full px-3 py-2 border border-gray-300 rounded-none bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent';
@@ -99,8 +107,18 @@ export function VariantBuilderPanel({
     if (cri != null) rows.push({ campo: 'CRI', valor: `${cri}+`, unidad: 'Ra' });
     const beam = beamValue(data.sku.optic === 'CUSTOM' ? data.sku.opticCustom : data.sku.optic);
     if (beam != null) rows.push({ campo: 'Beam angle', valor: `${beam}`, unidad: '°' });
+    const watts = wattsValue(data.sku.watts === 'CUSTOM' ? data.sku.wattsCustom : data.sku.watts);
+    if (watts != null) rows.push({ campo: 'System wattage', valor: `${watts}`, unidad: 'W' });
     return rows;
   }, [data.sku]);
+
+  // Manual rows shown in "Additional measured values", excluding any that are
+  // already auto-derived from the Builder (CCT/CRI/beam/System wattage) so the
+  // same value is never editable in two places. Keep the original index so the
+  // update/remove handlers still target the right row in datosTecnicos.
+  const extraTechRows = data.datosTecnicos
+    .map((t, i) => ({ t, i }))
+    .filter(({ t }) => !isDerivedField(t.campo));
 
   return (
     <div className="space-y-4">
@@ -265,10 +283,10 @@ export function VariantBuilderPanel({
             </div>
           </div>
           <p className="text-[11px] text-gray-500">
-            <strong>CCT, CRI and beam angle are added to the sheet automatically</strong> from your Builder
-            choices (Light quality) — no need to retype them here. Use this table only for <strong>extra
-            measured</strong> values (system / source lumens &amp; wattage, efficacy, MacAdam step, lifetime).
-            Note: a “Source wattage” row overrides the nominal Power set in the Builder.
+            <strong>CCT, CRI, beam angle and System wattage are added to the sheet automatically</strong> from
+            your Builder choices (Light quality / Power) — no need to retype them here. Use this table only for
+            <strong> extra measured</strong> values (system / source lumens, source wattage, efficacy, MacAdam
+            step, lifetime).
           </p>
 
           {/* Read-only preview of the values auto-filled from the Builder. */}
@@ -290,12 +308,12 @@ export function VariantBuilderPanel({
           <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 pt-1">
             Additional measured values
           </p>
-          {data.datosTecnicos.length === 0 && (
+          {extraTechRows.length === 0 && (
             <p className="text-[11px] text-gray-400 italic">
               None yet. Click <strong>“Load default fields”</strong> for the standard template, or “+ Row” to add your own.
             </p>
           )}
-          {data.datosTecnicos.map((t, i) => (
+          {extraTechRows.map(({ t, i }) => (
             <div key={i} className="flex items-end gap-2">
               <div className="grid flex-1 grid-cols-1 sm:grid-cols-3 gap-3">
                 <input className={fieldClass} placeholder="Field" value={t.campo} onChange={(e) => updateTech(i, { campo: e.target.value })} readOnly={t.locked} />

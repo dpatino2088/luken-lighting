@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import Image from 'next/image';
 import { Container } from '@/components/ui/Container';
 import { createClient } from '@/lib/supabase/server';
 import { InspirationProject } from '@/lib/types';
@@ -42,12 +43,14 @@ export default async function InspirationPage() {
               className="group"
             >
               <div className="space-y-4">
-                <div className="aspect-[4/3] bg-gray-100 overflow-hidden">
+                <div className="relative aspect-[4/3] bg-gray-100 overflow-hidden">
                   {(project.thumbnail_url || project.hero_image_url) ? (
-                    <img
+                    <Image
                       src={project.thumbnail_url || project.hero_image_url!}
                       alt={project.name}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      fill
+                      sizes="(max-width: 768px) 100vw, (max-width: 1024px) 50vw, 33vw"
+                      className="object-cover group-hover:scale-105 transition-transform duration-500"
                     />
                   ) : (
                     <div className="w-full h-full bg-gradient-to-br from-gray-200 to-gray-100 group-hover:scale-105 transition-transform duration-500" />
