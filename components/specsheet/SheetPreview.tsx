@@ -62,6 +62,20 @@ export function SheetPreview({
 
   const manualTech = data.datosTecnicos.filter((t) => t.campo);
 
+  // General data rows come from the Builder / Product fields. Only rows that
+  // actually have a value are shown, so accessories (e.g. a connector with no
+  // color / mounting / driver) don't render a column of empty "—" fields.
+  const generalRows = [
+    { label: 'Dimensions', value: dims ? `${dims} mm` : '' },
+    { label: 'Weight', value: data.peso ? `${data.peso} kg` : '' },
+    { label: 'Color', value: colorName },
+    { label: 'Mounting', value: data.montaje },
+    { label: 'Material', value: data.material },
+    { label: 'IP rating', value: data.ipRating },
+    { label: 'Electrical class', value: data.electricalClass },
+    { label: 'Driver / control', value: driverControl },
+  ].filter((row) => (row.value || '').trim());
+
   // Values coming straight from the Builder dropdowns (CCT, CRI, beam) are reused
   // on the sheet so they never have to be re-typed in Technical data. They are
   // skipped if the user already added a manual row with the same (aliased) field.
@@ -213,36 +227,24 @@ export function SheetPreview({
           </section>
         )}
 
-        {/* General data */}
-        <section>
-          <h2 className="text-[10px] font-semibold uppercase tracking-widest text-gray-500 border-b border-gray-300 pb-1 mb-2">
-            General data
-          </h2>
-          <table className="w-full">
-            <tbody>
-              <tr className="border-b border-gray-100">
-                <td className="py-1 pr-3 text-gray-400 uppercase text-[9px] w-32">Dimensions</td>
-                <td className="py-1">{dims ? `${dims} mm` : <Placeholder>—</Placeholder>}</td>
-              </tr>
-              <tr className="border-b border-gray-100">
-                <td className="py-1 pr-3 text-gray-400 uppercase text-[9px]">Weight</td>
-                <td className="py-1">{data.peso ? `${data.peso} kg` : <Placeholder>—</Placeholder>}</td>
-              </tr>
-              <tr className="border-b border-gray-100">
-                <td className="py-1 pr-3 text-gray-400 uppercase text-[9px]">Color</td>
-                <td className="py-1">{colorName || <Placeholder>—</Placeholder>}</td>
-              </tr>
-              <tr className="border-b border-gray-100">
-                <td className="py-1 pr-3 text-gray-400 uppercase text-[9px]">Mounting</td>
-                <td className="py-1">{data.montaje || <Placeholder>—</Placeholder>}</td>
-              </tr>
-              <tr>
-                <td className="py-1 pr-3 text-gray-400 uppercase text-[9px]">Driver / control</td>
-                <td className="py-1">{driverControl || <Placeholder>—</Placeholder>}</td>
-              </tr>
-            </tbody>
-          </table>
-        </section>
+        {/* General data (only fields that have a value; empty rows are hidden) */}
+        {generalRows.length > 0 && (
+          <section>
+            <h2 className="text-[10px] font-semibold uppercase tracking-widest text-gray-500 border-b border-gray-300 pb-1 mb-2">
+              General data
+            </h2>
+            <table className="w-full">
+              <tbody>
+                {generalRows.map((row, i) => (
+                  <tr key={row.label} className={i < generalRows.length - 1 ? 'border-b border-gray-100' : ''}>
+                    <td className="py-1 pr-3 text-gray-400 uppercase text-[9px] w-32">{row.label}</td>
+                    <td className="py-1">{row.value}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
+        )}
 
         {/* Dimensions drawing (dynamic) */}
         {dimensionsImage && (
