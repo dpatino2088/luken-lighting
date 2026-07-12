@@ -5,7 +5,7 @@
 // ──────────────────────────────────────────────────────────────────────────
 
 import type { SkuState } from './skuRules';
-import { EMPTY_SKU_STATE } from './skuRules';
+import { EMPTY_SKU_STATE, buildSku } from './skuRules';
 
 export interface ConfigRow {
   codigo: string;
@@ -24,6 +24,17 @@ export interface TechRow {
   unidad: string;
   /** locked rows come from the default template (field/unit are readonly). */
   locked?: boolean;
+}
+
+/**
+ * Per-field auto/manual sync flags for the identity fields. `true` = the field
+ * is auto-synced from the SKU; `false` = the user overrode it by hand.
+ */
+export interface LinkFlags {
+  name: boolean;
+  code: boolean;
+  codeDescription: boolean;
+  description: boolean;
 }
 
 export interface SpecSheetData {
@@ -56,6 +67,14 @@ export interface SpecSheetData {
   datosTecnicos: TechRow[];
   /** SKU generator state embedded so the sheet can be re-edited later. */
   sku: SkuState;
+  /**
+   * Auto/manual state for the identity fields. Persisted so a hand override
+   * (name / code / descriptions) survives a reload instead of being clobbered
+   * by the SKU auto-sync.
+   */
+  link: LinkFlags;
+  /** Whether the SKU series auto-derives from the product/family name. */
+  seriesLinked: boolean;
 }
 
 export const MONTAJE_OPTIONS = [
@@ -124,6 +143,8 @@ export function createDefaultSpecSheet(): SpecSheetData {
     // that are not already derived from the SKU or the General data / Builder.
     datosTecnicos: [],
     sku: { ...EMPTY_SKU_STATE },
+    link: { name: true, code: true, codeDescription: true, description: true },
+    seriesLinked: true,
   };
 }
 
@@ -135,6 +156,50 @@ export function cloneSpecSheet(data: SpecSheetData): SpecSheetData {
     colores: data.colores.map((c) => ({ ...c })),
     datosTecnicos: data.datosTecnicos.map((t) => ({ ...t })),
     sku: { ...data.sku },
+    link: { ...data.link },
+  };
+}
+
+// Series = first 3 letters of EACH word in the family name (joined by "-"),
+// plus any trailing number. e.g.
+//   "Alhena 15"   → "ALH15"
+//   "Santorini"   → "SAN"
+//   "Draco Point" → "DRA-POI"
+export function deriveSeries(name: string): string {
+  const cleaned = (name || '').trim();
+  if (!cleaned) return '';
+  const trailingNum = cleaned.match(/(\d+)\s*$/)?.[1] ?? '';
+  const words = cleaned
+    .split(/\s+/)
+    .map((w) => w.replace(/[^A-Za-z]/g, ''))
+    .filter(Boolean)
+    .map((w) => w.slice(0, 3).toUpperCase());
+  return words.join('-') + trailingNum;
+}
+
+// The auto description = SKU long description + the structured product
+// attributes owned by the Builder (mounting type, material, IP rating,
+// electrical class) so the description reflects the full product.
+export function composeAutoDescription(longDesc: string, d: SpecSheetData): string {
+  const extras = [d.montaje, d.material, d.ipRating, d.electricalClass]
+    .map((s) => (s || '').trim())
+    .filter(Boolean);
+  return [longDesc, ...extras].filter(Boolean).join(' / ');
+}
+
+/** The identity values (name / code / descriptions) the SKU would auto-generate. */
+export function deriveIdentity(d: SpecSheetData): {
+  name: string;
+  code: string;
+  codeDescription: string;
+  description: string;
+} {
+  const r = buildSku(d.sku);
+  return {
+    name: [d.productName.trim(), r.nameBody].filter(Boolean).join(' '),
+    code: r.shortCode,
+    codeDescription: r.shortDesc,
+    description: composeAutoDescription(r.longDesc, d),
   };
 }
 
@@ -145,7 +210,7 @@ export function cloneSpecSheet(data: SpecSheetData): SpecSheetData {
 export function normalizeSpecSheet(raw: Partial<SpecSheetData> | null | undefined): SpecSheetData {
   const base = createDefaultSpecSheet();
   if (!raw) return base;
-  return {
+  const merged: SpecSheetData = {
     ...base,
     ...raw,
     configuraciones:
@@ -171,5 +236,27 @@ export function normalizeSpecSheet(raw: Partial<SpecSheetData> | null | undefine
         }))
       : base.datosTecnicos,
     sku: { ...base.sku, ...(raw.sku ?? {}) },
+    link: { ...base.link, ...(raw.link ?? {}) },
+    seriesLinked: raw.seriesLinked ?? base.seriesLinked,
   };
+
+  // Migration for legacy sheets saved before the auto/manual state was
+  // persisted: infer which identity fields were hand-edited by comparing the
+  // stored value against what the SKU would auto-generate. A field that differs
+  // (and is non-empty) is treated as manual so the auto-sync won't clobber it.
+  if (raw.link == null) {
+    const derived = deriveIdentity(merged);
+    merged.link = {
+      name: merged.name.trim() === '' || merged.name === derived.name,
+      code: merged.code.trim() === '' || merged.code === derived.code,
+      codeDescription:
+        merged.codeDescription.trim() === '' || merged.codeDescription === derived.codeDescription,
+      description: merged.description.trim() === '' || merged.description === derived.description,
+    };
+  }
+  if (raw.seriesLinked == null) {
+    merged.seriesLinked = merged.sku.series === deriveSeries(merged.productName);
+  }
+
+  return merged;
 }

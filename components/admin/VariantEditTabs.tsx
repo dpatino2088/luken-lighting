@@ -12,7 +12,7 @@ import { IdentityFields } from '@/components/specsheet/IdentityFields';
 import { useSpecSheetSync } from '@/components/specsheet/useSpecSheetSync';
 import { SheetPreview } from '@/components/specsheet/SheetPreview';
 import { buildSku } from '@/lib/sku/skuRules';
-import { saveVariantBuilder } from '@/app/(admin)/admin/variants/actions';
+import { saveVariantBuilder, updateVariant } from '@/app/(admin)/admin/variants/actions';
 import { toast } from '@/components/ui/Toast';
 import type { ProductVariant, ProductCategory, Product, ProductAsset, AppSettings } from '@/lib/types';
 import type { SpecSheetData } from '@/lib/sku/specSheet';
@@ -70,6 +70,39 @@ export function VariantEditTabs({
     setSaving(false);
   }
 
+  // The Product tab shows the built Identity (name / code / descriptions) AND
+  // the Manufacturer / Pricing / Status form. "Save changes" must persist BOTH:
+  // the identity + spec sheet (owned by the Builder data) and the pricing form.
+  // Otherwise identity edits made here silently revert on reload.
+  async function handleSaveProduct() {
+    setSaving(true);
+
+    const identity = await saveVariantBuilder(variant.id, data, {
+      product_id: productId || null,
+      category_id: categoryId || null,
+      environment: environment || null,
+    });
+    if (identity.error) {
+      toast.error(identity.error);
+      setSaving(false);
+      return;
+    }
+
+    const form = document.getElementById('variant-product-form') as HTMLFormElement | null;
+    if (form) {
+      const pricing = await updateVariant(variant.id, new FormData(form));
+      if (pricing.error) {
+        toast.error(pricing.error);
+        setSaving(false);
+        return;
+      }
+    }
+
+    toast.success('Product saved.');
+    router.refresh();
+    setSaving(false);
+  }
+
   function handlePrint() {
     setTab('preview');
     // Chrome's "Save as PDF" uses document.title as the default filename.
@@ -108,9 +141,9 @@ export function VariantEditTabs({
               </Button>
             )}
             {tab === 'product' && (
-              <Button type="submit" form="variant-product-form" variant="primary" size="sm">
+              <Button type="button" variant="primary" size="sm" onClick={handleSaveProduct} disabled={saving}>
                 <Save className="w-4 h-4 mr-2" />
-                Save changes
+                {saving ? 'Saving...' : 'Save changes'}
               </Button>
             )}
             <Button type="button" variant="secondary" size="sm" onClick={handlePrint}>

@@ -43,6 +43,13 @@
   #spec-sheet-print,
   #spec-sheet-print * {
     visibility: visible !important;
+    /* Force background colors/images (black CODE bar, gray boxes) to print even
+       when the browser's "Background graphics" option is OFF — which is the
+       default on Windows/Chrome, where the sheet was otherwise coming out all
+       white. Applies to Chrome/Edge/Safari (-webkit) and the standard prop. */
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
   }
 
   /* Reveal the sheet even when its tab container is toggled off. */
