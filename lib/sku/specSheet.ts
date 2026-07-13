@@ -46,7 +46,10 @@ export interface SpecSheetData {
   code: string;
   codeDescription: string;
   description: string;
-  montaje: string;
+  /** General product subcategory (e.g. "Downlights", "Track Line Voltage",
+   *  "Accessories"). Used to group / order / filter the public Product Codes
+   *  list. Not part of the SKU. */
+  subcategory: string;
   /** Structured product attributes (not derivable from the SKU) — Builder owns these. */
   ipRating: string;
   material: string;
@@ -76,6 +79,35 @@ export interface SpecSheetData {
   /** Whether the SKU series auto-derives from the product/family name. */
   seriesLinked: boolean;
 }
+
+// General product subcategories (from the SpecBuilder taxonomy). This is the
+// single source of truth for the Builder dropdown AND the public grouping order
+// (sections render top-to-bottom in this order; anything unset falls into
+// "Other" at the very end). Luminaires first → sources / systems → outdoor →
+// bulbs / power → tools / accessories last.
+export const SUBCATEGORY_OPTIONS = [
+  'Downlights',
+  'Spotlights',
+  'Wall / Ceiling',
+  'Suspension',
+  'General Lighting',
+  'Lineal Light',
+  'Track Line Voltage',
+  'Track Low Voltage',
+  'Systems',
+  'LED Profiles',
+  'LED Strips',
+  'Landscape / Outdoor',
+  'In-Ground',
+  'Pole Mounted',
+  'Table / Floor',
+  'Emergency',
+  'Fans',
+  'LED Bulbs & Modules',
+  'Power & Control',
+  'Tool',
+  'Accessories',
+] as const;
 
 export const MONTAJE_OPTIONS = [
   'Recessed',
@@ -123,7 +155,7 @@ export function createDefaultSpecSheet(): SpecSheetData {
     code: '',
     codeDescription: '',
     description: '',
-    montaje: '',
+    subcategory: '',
     ipRating: '',
     material: '',
     electricalClass: '',
@@ -177,14 +209,22 @@ export function deriveSeries(name: string): string {
   return words.join('-') + trailingNum;
 }
 
-// The auto description = SKU long description + the structured product
-// attributes owned by the Builder (mounting type, material, IP rating,
-// electrical class) so the description reflects the full product.
+// The auto description = SKU long description (which already carries the
+// mounting type, since it is a SKU segment) + the structured product attributes
+// owned by the Builder (material, IP rating, electrical class) so the
+// description reflects the full product. Track / Profile products (linear
+// cross-sections) also get a "W x H x D mm" token built from the dimensions,
+// right after the SKU description.
 export function composeAutoDescription(longDesc: string, d: SpecSheetData): string {
-  const extras = [d.montaje, d.material, d.ipRating, d.electricalClass]
+  const isTrackOrProfile = Boolean((d.sku.track || '').trim() || (d.sku.profile || '').trim());
+  const dimToken = isTrackOrProfile
+    ? [d.ancho, d.alto, d.fondo].map((s) => (s || '').trim()).filter(Boolean).join(' x ')
+    : '';
+  const dimensionPart = dimToken ? `${dimToken}mm` : '';
+  const extras = [d.material, d.ipRating, d.electricalClass]
     .map((s) => (s || '').trim())
     .filter(Boolean);
-  return [longDesc, ...extras].filter(Boolean).join(' / ');
+  return [longDesc, dimensionPart, ...extras].filter(Boolean).join(' / ');
 }
 
 /** The identity values (name / code / descriptions) the SKU would auto-generate. */
@@ -239,6 +279,14 @@ export function normalizeSpecSheet(raw: Partial<SpecSheetData> | null | undefine
     link: { ...base.link, ...(raw.link ?? {}) },
     seriesLinked: raw.seriesLinked ?? base.seriesLinked,
   };
+
+  // Migration: mounting type used to live on `montaje` (SpecSheetData). It is now
+  // a SKU segment (`sku.mounting`). Carry the legacy value over when the new
+  // field is empty so older sheets keep their mounting type.
+  const legacyMontaje = (raw as { montaje?: unknown }).montaje;
+  if (!merged.sku.mounting && typeof legacyMontaje === 'string' && legacyMontaje.trim()) {
+    merged.sku = { ...merged.sku, mounting: legacyMontaje };
+  }
 
   // Migration for legacy sheets saved before the auto/manual state was
   // persisted: infer which identity fields were hand-edited by comparing the

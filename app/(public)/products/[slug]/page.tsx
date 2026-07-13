@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { ProductVariant } from '@/lib/types';
 import { buildSku } from '@/lib/sku/skuRules';
+import { SUBCATEGORY_OPTIONS } from '@/lib/sku/specSheet';
 import { formatCCT, formatCRI } from '@/lib/utils';
 import { generateMetadata as genMeta } from '@/lib/seo';
 import { Shield, Lightbulb, ChevronRight } from 'lucide-react';
@@ -15,7 +16,19 @@ import { CONTROL_LABELS } from './product-constants';
 
 interface PageProps {
   params: Promise<{ slug: string }>;
-  searchParams?: Promise<{ optic?: string; k?: string; cri?: string; control?: string }>;
+  searchParams?: Promise<{ optic?: string; k?: string; cri?: string; control?: string; type?: string }>;
+}
+
+// Group the public "Product Codes" list into sections by the general product
+// subcategory chosen in the Builder (e.g. "Downlights", "Track Line Voltage",
+// "Accessories"), so a family that mixes luminaires, track and accessories reads
+// clearly instead of one long list. Section order = SUBCATEGORY_OPTIONS order;
+// anything unset falls into "Other" at the very end.
+const GROUP_ORDER = [...SUBCATEGORY_OPTIONS, 'Other'];
+
+function variantGroup(subcategory: string | undefined | null): string {
+  const s = (subcategory || '').trim();
+  return s || 'Other';
 }
 
 export async function generateMetadata({ params }: PageProps) {
@@ -62,12 +75,14 @@ export default async function ProductPage({ params, searchParams }: PageProps) {
 
     const variantList = (variants as ProductVariant[]) || [];
 
-    // Public "Product Codes" shows the LONG SKU (all segments) so the code alone
-    // identifies the product. The long code lives in the spec sheet SKU state
-    // (spec_sheets.data.sku); we compute it here and fall back to the stored
-    // short `code` for legacy variants that have no spec sheet yet.
+    // Public "Product Codes" shows the variant's real code. When the code is
+    // AUTO (still linked to the SKU) we expand it to the LONG SKU (all segments)
+    // so it is fully descriptive. When the code was overridden BY HAND
+    // (link.code === false) we keep the stored manual code as-is — otherwise a
+    // manual code like "ALH15-INT-PWR-CONN-WH" would be replaced by the mostly
+    // empty derived "ALH15". Fall back to the stored `code` for legacy variants.
     // spec_sheets is RLS-restricted to authenticated users, so we read it with
-    // the server-only admin client and expose ONLY the derived long code.
+    // the server-only admin client and expose ONLY the derived code.
     const ids = variantList.map((v) => v.id);
     const latestSheet = new Map<string, any>();
     const sheetReader = createAdminClient() ?? supabase;
@@ -85,13 +100,22 @@ export default async function ProductPage({ params, searchParams }: PageProps) {
       }
     }
     const enriched = variantList.map((v) => {
-      const sku = latestSheet.get(v.id)?.data?.sku;
+      const sheetData = latestSheet.get(v.id)?.data;
+      const sku = sheetData?.sku;
+      // The stored variant code is the source of truth (auto short OR manual).
       let full_code = v.code;
-      if (sku) {
+      const codeIsManual = sheetData?.link?.code === false;
+      if (sku && !codeIsManual) {
         const r = buildSku(sku);
-        if (r.longCode) full_code = r.longCode;
+        // Only expand to the long code when it actually extends the stored code
+        // (auto codes are a prefix of their long form); never shrink a manual one.
+        if (r.longCode && r.longCode.startsWith(r.shortCode) && r.longCode.length >= (v.code || '').length) {
+          full_code = r.longCode;
+        }
       }
-      return { ...v, full_code };
+      const _group = variantGroup(sheetData?.subcategory);
+      const sortIdx = GROUP_ORDER.indexOf(_group);
+      return { ...v, full_code, _group, _groupSort: sortIdx === -1 ? GROUP_ORDER.length : sortIdx };
     });
 
     return (
@@ -102,6 +126,7 @@ export default async function ProductPage({ params, searchParams }: PageProps) {
         filterK={filters.k}
         filterCri={filters.cri}
         filterControl={filters.control}
+        filterType={filters.type}
       />
     );
   }
@@ -118,6 +143,7 @@ function ProductView({
   filterK,
   filterCri,
   filterControl,
+  filterType,
 }: {
   product: any;
   variants: ProductVariant[];
@@ -125,9 +151,10 @@ function ProductView({
   filterK?: string;
   filterCri?: string;
   filterControl?: string;
+  filterType?: string;
 }) {
   const baseUrl = `/products/${product.slug}`;
-  const currentFilters = { optic: filterOptic, k: filterK, cri: filterCri, control: filterControl };
+  const currentFilters = { optic: filterOptic, k: filterK, cri: filterCri, control: filterControl, type: filterType };
 
   const getCctLabel = (v: ProductVariant) =>
     (v.cct_min || v.cct_max) ? formatCCT(v.cct_min, v.cct_max) : null;
@@ -138,6 +165,7 @@ function ProductView({
     v.beam_angle ? `${v.beam_angle}°` : null;
 
   const filtered = variants.filter((v) => {
+    if (filterType && v._group !== filterType) return false;
     if (filterOptic && getBeamLabel(v) !== filterOptic) return false;
     if (filterK && getCctLabel(v) !== filterK) return false;
     if (filterCri && getCriLabel(v) !== filterCri) return false;
@@ -145,6 +173,8 @@ function ProductView({
     return true;
   });
 
+  // Subcategory options actually present on this product, kept in GROUP_ORDER.
+  const uniqueType = GROUP_ORDER.filter((g) => variants.some((v) => v._group === g));
   const uniqueOptic = [...new Set(variants.map((v) => getBeamLabel(v)).filter(Boolean))] as string[];
   const uniqueK = [...new Set(variants.map((v) => getCctLabel(v)).filter(Boolean))] as string[];
   const uniqueCri = [...new Set(variants.map((v) => getCriLabel(v)).filter(Boolean))] as string[];
@@ -252,6 +282,16 @@ function ProductView({
           <div className="mb-6 bg-gray-50 border border-gray-200 rounded-lg px-6 py-5">
             <div className="flex flex-wrap items-center gap-4">
               <span className="text-sm text-gray-500 mr-2">Filter codes by:</span>
+              {uniqueType.length > 1 && (
+                <FilterDropdown
+                  label="Type"
+                  options={uniqueType}
+                  current={currentFilters.type}
+                  baseUrl={baseUrl}
+                  filterKey="type"
+                  allFilters={currentFilters}
+                />
+              )}
               <FilterDropdown
                 label="Optic"
                 options={uniqueOptic}

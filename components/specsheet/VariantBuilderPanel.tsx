@@ -2,7 +2,7 @@
 
 import { useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import { SkuFields } from '@/components/specsheet/SkuFields';
-import { DEFAULT_TECH_ROWS, MONTAJE_OPTIONS, type ConfigRow, type SpecSheetData, type TechRow } from '@/lib/sku/specSheet';
+import { DEFAULT_TECH_ROWS, SUBCATEGORY_OPTIONS, type ConfigRow, type SpecSheetData, type TechRow } from '@/lib/sku/specSheet';
 import { buildSku, cctKelvinFromCustom } from '@/lib/sku/skuRules';
 import { cctRange, criValue, beamValue, wattsValue } from '@/lib/sku/mapToLuken';
 import type { SpecSheetSync } from '@/components/specsheet/useSpecSheetSync';
@@ -41,7 +41,7 @@ const isDerivedField = (campo: string) => DERIVED_TECH_ALIASES.has((campo || '')
 
 const fieldClass =
   'w-full px-3 py-2 border border-gray-300 rounded-none bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent';
-const labelClass = 'block text-xs font-medium uppercase tracking-wide text-gray-500 mb-1';
+const labelClass = 'block text-xs font-medium uppercase tracking-wide text-gray-500 mb-1.5';
 const subTabBtn = (active: boolean) =>
   'px-3 py-1.5 text-xs font-medium uppercase tracking-wide transition-colors ' +
   (active ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200');
@@ -121,7 +121,32 @@ export function VariantBuilderPanel({
     .filter(({ t }) => !isDerivedField(t.campo));
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-6">
+      {/* Subcategory — classifies the variant and drives the grouping / ordering
+          / filtering of the public Product Codes list. Placed first (its own card,
+          matching "Belongs to (family)"): start by choosing the subcategory, then
+          continue. Field width ~1/3 to match the "Product (family)" field. */}
+      <div className="bg-white border border-gray-200 p-5">
+        <h2 className="text-sm font-semibold uppercase tracking-wide mb-4">Subcategory</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div>
+            <label className={labelClass}>Subcategory</label>
+            <select className={fieldClass} value={data.subcategory} onChange={(e) => set('subcategory', e.target.value)}>
+              <option value="">— choose —</option>
+              {data.subcategory && !SUBCATEGORY_OPTIONS.includes(data.subcategory as (typeof SUBCATEGORY_OPTIONS)[number]) && (
+                <option value={data.subcategory}>{data.subcategory}</option>
+              )}
+              {SUBCATEGORY_OPTIONS.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <p className="mt-3 text-[11px] text-gray-500">
+          Groups, orders &amp; filters this code in the public <strong>Product Codes</strong> list (e.g. Downlights, Track Line Voltage, Accessories).
+        </p>
+      </div>
+
       <div className="flex flex-wrap gap-1.5">
           {SUBTABS.map((t) => (
             <button key={t.id} type="button" onClick={() => setTab(t.id)} className={subTabBtn(tab === t.id)}>
@@ -131,9 +156,9 @@ export function VariantBuilderPanel({
         </div>
 
         {/* General data (SKU generator + general fields + dimensions) */}
-        <div hidden={tab !== 'general'} className="bg-white border border-gray-200 p-5 space-y-6">
+        <div hidden={tab !== 'general'} className="bg-white border border-gray-200 p-6 sm:p-8 space-y-8">
           {/* SKU generator */}
-          <div className="space-y-4">
+          <div className="space-y-5">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <h3 className="text-sm font-semibold uppercase tracking-wide">SKU generator</h3>
@@ -154,7 +179,7 @@ export function VariantBuilderPanel({
           </div>
 
           {/* General fields */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-t border-gray-100 pt-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5 border-t border-gray-100 pt-8">
             <div className="sm:col-span-2">
               <label className={labelClass}>Product name (drives series: Draco → DRA)</label>
               <input
@@ -171,15 +196,6 @@ export function VariantBuilderPanel({
             <div>
               <label className={labelClass}>Last updated</label>
               <input className={fieldClass} value={data.lastUpdate} onChange={(e) => set('lastUpdate', e.target.value)} placeholder="e.g. 30/06/2026" />
-            </div>
-            <div>
-              <label className={labelClass}>Mounting type</label>
-              <select className={fieldClass} value={data.montaje} onChange={(e) => set('montaje', e.target.value)}>
-                <option value="">— choose —</option>
-                {MONTAJE_OPTIONS.map((m) => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </select>
             </div>
             <div>
               <label className={labelClass}>IP rating</label>
@@ -218,10 +234,10 @@ export function VariantBuilderPanel({
           </div>
 
           <div>
-            <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2 border-t border-gray-100 pt-6">
+            <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-4 border-t border-gray-100 pt-8">
               Dimensions
             </h4>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-5">
               <div>
                 <label className={labelClass}>Width (mm)</label>
                 <input className={fieldClass} type="number" value={data.ancho} onChange={(e) => set('ancho', e.target.value)} />

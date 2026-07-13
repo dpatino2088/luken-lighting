@@ -44,6 +44,7 @@ export function lightSource(state: SkuState): string | null {
   if (socket) return socket; // GU10, GU5.3, E26, E27, G13, G5, or custom
   const src = state.source.trim();
   if (src === 'LED') return 'LED Integrated';
+  if (src === 'LST') return 'LED Strip';
   return src || null;
 }
 
@@ -195,7 +196,7 @@ export function specSheetToVariantFields(data: SpecSheetData, environment: strin
     ip_rating: data.ipRating.trim() || null,
     class: data.electricalClass.trim() || null,
     control_types: controlTypes(data.sku.ctrl),
-    mounting_type: mountingType(data.montaje),
+    mounting_type: mountingType(data.sku.mounting),
     environment,
     dimensions: Object.keys(dims).length ? dims : null,
   };
@@ -257,7 +258,10 @@ export function seedSpecSheetFromVariant(
     code: variant.code || '',
     codeDescription: variant.short_description || '',
     description: variant.long_description || '',
-    montaje: variant.mounting_type ? MOUNTING_REVERSE[variant.mounting_type] || '' : '',
+    sku: {
+      ...base.sku,
+      mounting: variant.mounting_type ? MOUNTING_REVERSE[variant.mounting_type] || '' : '',
+    },
     ipRating: variant.ip_rating || '',
     material: variant.material || '',
     electricalClass: variant.class || '',

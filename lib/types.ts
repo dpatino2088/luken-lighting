@@ -92,6 +92,11 @@ export interface ProductVariant {
   code: string;
   /** Full/long SKU derived from the spec sheet (all segments). Display-only. */
   full_code?: string;
+  /** Section label for grouping the public Product Codes list (e.g. "Round",
+   *  "Track", "Accessories"). Derived from the SKU. Display-only. */
+  _group?: string;
+  /** Sort index for the group section order. Display-only. */
+  _groupSort?: number;
   short_description: string;
   long_description: string;
   category_id: string;

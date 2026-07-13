@@ -6,6 +6,8 @@ import {
   buildSku,
   DIM_OPTIONS,
   SHAPE_OPTIONS,
+  TRACK_OPTIONS,
+  PROFILE_OPTIONS,
   SOURCE_OPTIONS,
   SOCKET_OPTIONS,
   TRIM_OPTIONS,
@@ -19,11 +21,12 @@ import {
   CTRL_OPTIONS,
   VERSION_OPTIONS,
 } from '@/lib/sku/skuRules';
+import { MONTAJE_OPTIONS } from '@/lib/sku/specSheet';
 
 const selectClass =
   'w-full px-3 py-2 border border-gray-300 rounded-none bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent';
 const inputClass = selectClass;
-const labelClass = 'block text-xs font-medium uppercase tracking-wide text-gray-500 mb-1';
+const labelClass = 'block text-xs font-medium uppercase tracking-wide text-gray-500 mb-1.5';
 
 function groupOptions(options: SkuOption[]): { group: string | null; items: SkuOption[] }[] {
   const out: { group: string | null; items: SkuOption[] }[] = [];
@@ -82,12 +85,12 @@ function SkuSelect({
 
 function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
-    <div className="border border-gray-200 bg-gray-50/40 p-4 space-y-4">
-      <div className="flex items-baseline gap-2 border-b border-gray-200 pb-2">
+    <div className="border border-gray-200 bg-gray-50/40 p-5 sm:p-6 space-y-5">
+      <div className="flex items-baseline gap-2 border-b border-gray-200 pb-3">
         <h4 className="text-sm font-semibold uppercase tracking-widest text-gray-800">{title}</h4>
         {hint && <span className="text-[11px] text-gray-400">{hint}</span>}
       </div>
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">{children}</div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-6 gap-y-5">{children}</div>
     </div>
   );
 }
@@ -102,10 +105,19 @@ export function SkuFields({
   const set = (patch: Partial<SkuState>) => onChange({ ...state, ...patch });
   const r = buildSku(state);
 
+  // Track / Profile / Linear shape are mutually exclusive. Choosing one clears
+  // the others (a Linear shape and a track/profile can't coexist on one SKU).
+  const chooseTrack = (v: string) =>
+    set(v ? { track: v, profile: '', shape: state.shape === 'L' ? '' : state.shape, length: '' } : { track: '' });
+  const chooseProfile = (v: string) =>
+    set(v ? { profile: v, track: '', shape: state.shape === 'L' ? '' : state.shape, length: '' } : { profile: '' });
+  const chooseShape = (v: string) =>
+    set(v === 'L' ? { shape: v, track: '', profile: '' } : { shape: v });
+
   return (
     <div className="space-y-8">
       {/* Live SKU block */}
-      <div className="bg-gray-900 text-white p-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="bg-gray-900 text-white p-5 grid grid-cols-1 sm:grid-cols-2 gap-6">
         <div>
           <div className="text-[10px] uppercase tracking-widest text-gray-400">Short SKU</div>
           <div className="font-mono text-sm break-all">{r.shortCode || '—'}</div>
@@ -133,13 +145,36 @@ export function SkuFields({
             <input className={inputClass} value={state.dimCustom} onChange={(e) => set({ dimCustom: e.target.value })} placeholder="e.g. 35x50" />
           </div>
         )}
-        <SkuSelect label="Shape" value={state.shape} onChange={(v) => set({ shape: v })} options={SHAPE_OPTIONS} />
+        <SkuSelect label="Shape" value={state.shape} onChange={chooseShape} options={SHAPE_OPTIONS} />
         {state.shape === 'L' && (
           <div>
             <label className={labelClass}>Length (mm)</label>
             <input className={inputClass} value={state.length} onChange={(e) => set({ length: e.target.value })} placeholder="e.g. 1200" />
           </div>
         )}
+        <SkuSelect
+          label={`Track${state.profile ? ' (clears profile)' : ''}`}
+          value={state.track}
+          onChange={chooseTrack}
+          options={TRACK_OPTIONS}
+          placeholder="— none —"
+        />
+        <SkuSelect
+          label={`Profile${state.track ? ' (clears track)' : ''}`}
+          value={state.profile}
+          onChange={chooseProfile}
+          options={PROFILE_OPTIONS}
+          placeholder="— none —"
+        />
+        <div>
+          <label className={labelClass}>Mounting type</label>
+          <select className={selectClass} value={state.mounting} onChange={(e) => set({ mounting: e.target.value })}>
+            <option value="">— choose —</option>
+            {MONTAJE_OPTIONS.map((m) => (
+              <option key={m} value={m}>{m}</option>
+            ))}
+          </select>
+        </div>
       </Section>
 
       <Section title="Light source">

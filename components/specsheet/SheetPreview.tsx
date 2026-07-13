@@ -1,7 +1,7 @@
 'use client';
 
 import { type SpecSheetData, type TechRow } from '@/lib/sku/specSheet';
-import { buildSku, skuColorName, skuDriverControlText, cctKelvinFromCustom } from '@/lib/sku/skuRules';
+import { buildSku, skuColorName, skuDriverControlText, skuTrackName, skuProfileName, cctKelvinFromCustom } from '@/lib/sku/skuRules';
 import { cctRange, criValue, beamValue, wattsValue } from '@/lib/sku/mapToLuken';
 import type { ProductAsset } from '@/lib/types';
 
@@ -68,8 +68,10 @@ export function SheetPreview({
   const generalRows = [
     { label: 'Dimensions', value: dims ? `${dims} mm` : '' },
     { label: 'Weight', value: data.peso ? `${data.peso} kg` : '' },
+    { label: 'Track', value: skuTrackName(data.sku.track) },
+    { label: 'Profile', value: skuProfileName(data.sku.profile) },
     { label: 'Color', value: colorName },
-    { label: 'Mounting', value: data.montaje },
+    { label: 'Mounting', value: data.sku.mounting },
     { label: 'Material', value: data.material },
     { label: 'IP rating', value: data.ipRating },
     { label: 'Electrical class', value: data.electricalClass },

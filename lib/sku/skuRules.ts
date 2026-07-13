@@ -20,6 +20,9 @@ export interface SkuState {
   dimCustom: string;  // custom dimension when dim === 'CUSTOM'
   shape: string;
   length: string;     // linear only (shape === 'L')
+  track: string;      // track system — mutually exclusive with profile & Linear shape
+  profile: string;    // aluminum profile — mutually exclusive with track & Linear shape
+  mounting: string;   // mounting type label (e.g. "Recessed") — part of code + description
   source: string;
   socket: string;
   socketCustom: string; // custom socket when socket === 'CUSTOM'
@@ -46,6 +49,9 @@ export const EMPTY_SKU_STATE: SkuState = {
   dimCustom: '',
   shape: '',
   length: '',
+  track: '',
+  profile: '',
+  mounting: '',
   source: '',
   socket: '',
   socketCustom: '',
@@ -68,7 +74,7 @@ export const EMPTY_SKU_STATE: SkuState = {
 
 // ── Translation maps (code → human description) ─────────────────────────────
 export const T = {
-  source: { LED: 'LED', HAL: 'Halogen', RTF: 'Retrofit', MOD: 'Module' },
+  source: { LED: 'LED', LST: 'LED strip', HAL: 'Halogen', RTF: 'Retrofit', MOD: 'Module' },
   socket: {
     MOD: 'integrated module',
     GU10: 'GU10 socket',
@@ -158,8 +164,24 @@ export const T = {
     DMX: 'DMX',
     RFD: 'RF dimmable',
   },
-  shape: { R: 'Round', S: 'Square', L: 'Linear', RT: 'Rectangular' },
+  shape: { R: 'Round', S: 'Square', L: 'Linear', RT: 'Rectangular', ACC: 'Accessory' },
   version: { V2: 'Version 2', V3: 'Version 3', V4: 'Version 4' },
+  // NOTE: default Track / Profile option sets — adjust the labels/codes here and
+  // in TRACK_OPTIONS / PROFILE_OPTIONS below to match Luken's real catalog.
+  track: {
+    MAG48: '48V Magnetic track',
+    MAG24: '24V Magnetic track',
+    '1PH': 'Single-circuit track',
+    '3PH': 'Three-circuit track',
+    LV: 'Low-voltage track',
+  },
+  profile: {
+    SUR: 'Surface profile',
+    REC: 'Recessed profile',
+    PEN: 'Suspended / Pendant profile',
+    COR: 'Corner profile',
+    TRL: 'Trimless profile',
+  },
 } as const;
 
 type TMap = keyof typeof T;
@@ -175,6 +197,20 @@ export function skuColorName(code: string): string {
   const c = code.trim();
   if (!c) return '';
   return (T.color as Record<string, string>)[c] ?? c;
+}
+
+/** Human label for a track code (e.g. "MAG48" → "48V Magnetic track"). */
+export function skuTrackName(code: string): string {
+  const c = (code || '').trim();
+  if (!c) return '';
+  return (T.track as Record<string, string>)[c] ?? c;
+}
+
+/** Human label for a profile code (e.g. "SUR" → "Surface profile"). */
+export function skuProfileName(code: string): string {
+  const c = (code || '').trim();
+  if (!c) return '';
+  return (T.profile as Record<string, string>)[c] ?? c;
 }
 
 /** Readable Driver / Control summary from the SKU (e.g. "Remote CC driver / 120V / 0–10V dimming"). */
@@ -216,10 +252,52 @@ export const SHAPE_OPTIONS: SkuOption[] = [
   { value: 'S', label: 'S – Square' },
   { value: 'L', label: 'L – Linear' },
   { value: 'RT', label: 'RT – Rectangular' },
+  { value: 'ACC', label: 'ACC – Accessory' },
 ];
+
+// Track & Profile are mutually exclusive linear-system types (with each other and
+// with a Linear shape). The SKU carries a TRK / PRF flag; the specific system
+// shows in the description + spec sheet. Adjust these lists to Luken's catalog.
+export const TRACK_OPTIONS: SkuOption[] = [
+  { value: 'MAG48', label: 'MAG48 – 48V Magnetic track' },
+  { value: 'MAG24', label: 'MAG24 – 24V Magnetic track' },
+  { value: '1PH', label: '1PH – Single-circuit track' },
+  { value: '3PH', label: '3PH – Three-circuit track' },
+  { value: 'LV', label: 'LV – Low-voltage track' },
+];
+
+export const PROFILE_OPTIONS: SkuOption[] = [
+  { value: 'SUR', label: 'SUR – Surface profile' },
+  { value: 'REC', label: 'REC – Recessed profile' },
+  { value: 'PEN', label: 'PEN – Suspended / Pendant profile' },
+  { value: 'COR', label: 'COR – Corner profile' },
+  { value: 'TRL', label: 'TRL – Trimless profile' },
+];
+
+// Mounting type — the label lives on the SKU state (matching MONTAJE_OPTIONS in
+// specSheet.ts). This maps each mounting label to the short code that goes into
+// the SKU. Unknown labels fall back to a sanitized 3-letter code in buildSku.
+export const MOUNTING_CODE: Record<string, string> = {
+  'Recessed': 'REC',
+  'Surface mounted': 'SUR',
+  'Suspended / Pendant': 'PEN',
+  'Ceiling mounted': 'CEI',
+  'Wall mounted': 'WAL',
+  'Track mounted': 'TRA',
+  'Linear / Trunking': 'LIN',
+  'In-ground / In-grade': 'ING',
+  'Floor standing': 'FLO',
+  'Table / Desk': 'TAB',
+  'Portable': 'POR',
+  'Bollard / Post': 'BOL',
+  'Pole mounted': 'POL',
+  'Step / Stair': 'STE',
+  'Underwater': 'UND',
+};
 
 export const SOURCE_OPTIONS: SkuOption[] = [
   { value: 'LED', label: 'LED' },
+  { value: 'LST', label: 'LST – LED strip' },
   { value: 'HAL', label: 'HAL – Halogen' },
   { value: 'RTF', label: 'RTF – Retrofit' },
   { value: 'MOD', label: 'MOD – Module' },
@@ -378,6 +456,11 @@ export interface SkuResult {
  * Build SHORT + LONG SKU codes and human descriptions from form state.
  */
 export function buildSku(state: SkuState): SkuResult {
+  // Be tolerant of partial states: legacy spec sheets stored in the DB predate
+  // newer fields (track / profile / mounting), so their raw `sku` object is
+  // missing those keys. Merge onto the empty state so `.trim()` never hits
+  // `undefined` (the public product page calls this with the raw stored sku).
+  state = { ...EMPTY_SKU_STATE, ...state };
   const dimRaw = state.dim === 'CUSTOM' ? state.dimCustom.trim() : state.dim.trim();
   const shape = state.shape.trim();
   const length = state.length.trim();
@@ -412,6 +495,26 @@ export function buildSku(state: SkuState): SkuResult {
 
   // 3 · Length (linear only — already merged into dimDesc)
   if (shape === 'L' && length) add(length, true, null, true);
+
+  // 3b · Track / Profile — mutually exclusive linear systems. The type flag
+  // (TRK / PRF) is part of the SKU code; the specific system is the description.
+  const track = state.track.trim();
+  const profile = state.profile.trim();
+  if (track) {
+    add('TRK', true, translate('track', track), true);
+  } else if (profile) {
+    add('PRF', true, translate('profile', profile), true);
+  }
+
+  // 3c · Mounting type — part of the SKU code and the description. The state
+  // stores the human label (e.g. "Recessed"); the code comes from MOUNTING_CODE
+  // (unknown labels fall back to a sanitized 3-letter code).
+  const mounting = state.mounting.trim();
+  if (mounting) {
+    const mCode =
+      MOUNTING_CODE[mounting] ?? mounting.replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase();
+    if (mCode) add(mCode, true, mounting);
+  }
 
   // 4 · Source / socket / trim / color (short + long)
   add(state.source.trim(), true, translate('source', state.source.trim()), true);

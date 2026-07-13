@@ -66,7 +66,7 @@ export function useSpecSheetSync(
       return { ...prev, ...want };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data.sku, data.productName, data.montaje, data.material, data.ipRating, data.electricalClass, link]);
+  }, [data.sku, data.productName, data.material, data.ipRating, data.electricalClass, data.ancho, data.alto, data.fondo, link]);
 
   // Editing a field by hand switches it to manual (stops the sync) and stores
   // the value — both persisted inside `data`.
