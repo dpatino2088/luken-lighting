@@ -80,22 +80,22 @@ export function VariantsTable({ variants, productSlug }: VariantsTableProps) {
           <thead>
             <tr className="bg-white border-b border-gray-100">
               <th className="px-5 py-3 w-16" />
-              <th className="px-5 py-3 text-left text-[11px] font-medium tracking-wide text-gray-400">
+              <th className="px-5 py-3 text-left text-xs font-medium tracking-wide text-gray-600">
                 Code
               </th>
-              <th className="px-5 py-3 text-left text-[11px] font-medium tracking-wide text-gray-400">
+              <th className="px-5 py-3 text-left text-xs font-medium tracking-wide text-gray-600">
                 Power
               </th>
-              <th className="px-5 py-3 text-left text-[11px] font-medium tracking-wide text-gray-400">
+              <th className="px-5 py-3 text-left text-xs font-medium tracking-wide text-gray-600">
                 Lumens
               </th>
-              <th className="px-5 py-3 text-left text-[11px] font-medium tracking-wide text-gray-400">
+              <th className="px-5 py-3 text-left text-xs font-medium tracking-wide text-gray-600">
                 CCT
               </th>
-              <th className="px-5 py-3 text-left text-[11px] font-medium tracking-wide text-gray-400">
+              <th className="px-5 py-3 text-left text-xs font-medium tracking-wide text-gray-600">
                 IP
               </th>
-              <th className="px-5 py-3 text-left text-[11px] font-medium tracking-wide text-gray-400">
+              <th className="px-5 py-3 text-left text-xs font-medium tracking-wide text-gray-600">
                 Control
               </th>
               <th className="px-5 py-3 w-10" />
