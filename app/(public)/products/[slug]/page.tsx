@@ -5,7 +5,6 @@ import { Container } from '@/components/ui/Container';
 import { VariantsTable } from '@/components/VariantsTable';
 import { FilterDropdown } from '@/components/FilterDropdown';
 import { createClient } from '@/lib/supabase/server';
-import { createAdminClient } from '@/lib/supabase/admin';
 import { ProductVariant } from '@/lib/types';
 import { buildSku } from '@/lib/sku/skuRules';
 import { SUBCATEGORY_OPTIONS } from '@/lib/sku/specSheet';
@@ -81,13 +80,13 @@ export default async function ProductPage({ params, searchParams }: PageProps) {
     // (link.code === false) we keep the stored manual code as-is — otherwise a
     // manual code like "ALH15-INT-PWR-CONN-WH" would be replaced by the mostly
     // empty derived "ALH15". Fall back to the stored `code` for legacy variants.
-    // spec_sheets is RLS-restricted to authenticated users, so we read it with
-    // the server-only admin client and expose ONLY the derived code.
+    // spec_sheets is PUBLIC-readable for active variants (see RLS policy
+    // "Public can view spec sheets of active variants"), so the anon/SSR client
+    // reads it directly — the public site never depends on the service_role key.
     const ids = variantList.map((v) => v.id);
     const latestSheet = new Map<string, any>();
-    const sheetReader = createAdminClient() ?? supabase;
     if (ids.length > 0) {
-      const { data: sheets } = await sheetReader
+      const { data: sheets } = await supabase
         .from('spec_sheets')
         .select('variant_id, data, updated_at')
         .in('variant_id', ids)
