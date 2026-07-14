@@ -97,6 +97,22 @@ export default async function ProductsPage({ searchParams }: ProductsPageProps) 
     return a.name.localeCompare(b.name);
   });
 
+  // Group the (already ordered) products by category so the grid renders in
+  // subtle sections: Downlights, then a gap, then Spotlights, and so on —
+  // always following product_categories.sort_order.
+  const productGroups: { key: string; name: string | null; products: Product[] }[] = [];
+  for (const cat of categories) {
+    const items = displayProducts.filter((p) => p.category_id === cat.id);
+    if (items.length > 0) productGroups.push({ key: cat.id, name: cat.name, products: items });
+  }
+  const uncategorized = displayProducts.filter(
+    (p) => !p.category_id || !categoryOrder.has(p.category_id)
+  );
+  if (uncategorized.length > 0) {
+    productGroups.push({ key: 'uncategorized', name: null, products: uncategorized });
+  }
+  const showGroupHeaders = productGroups.length > 1;
+
   const categoriesWithCount = categories.map((cat) => ({
     ...cat,
     productCount: allProducts.filter((p) => p.category_id === cat.id).length,
@@ -152,37 +168,51 @@ export default async function ProductsPage({ searchParams }: ProductsPageProps) 
             </div>
 
             {displayProducts.length > 0 ? (
-              <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-8">
-                {displayProducts.map((product) => (
-                  <Link
-                    key={product.id}
-                    href={`/products/${product.slug}`}
-                    className="group"
-                  >
-                    <div className="space-y-4">
-                      <div className="relative aspect-[4/3] bg-gray-100 overflow-hidden">
-                        {(product.thumbnail_url || product.hero_image_url) ? (
-                          <Image
-                            src={product.thumbnail_url || product.hero_image_url!}
-                            alt={product.name}
-                            fill
-                            sizes="(max-width: 768px) 100vw, (max-width: 1280px) 50vw, 33vw"
-                            className="object-cover group-hover:scale-105 transition-transform duration-500"
-                          />
-                        ) : (
-                          <div className="w-full h-full bg-gradient-to-br from-gray-200 to-gray-100 group-hover:scale-105 transition-transform duration-500" />
-                        )}
-                      </div>
-                      <div>
-                        <h2 className="text-lg font-medium tracking-wide uppercase group-hover:text-brand-copper transition-colors">
-                          {product.name}
+              <div className="space-y-16">
+                {productGroups.map((group) => (
+                  <section key={group.key}>
+                    {showGroupHeaders && (
+                      <div className="mb-6 flex items-center gap-4">
+                        <h2 className="text-xs font-medium tracking-[0.25em] uppercase text-gray-400 whitespace-nowrap">
+                          {group.name ?? 'Other'}
                         </h2>
-                        <p className="text-sm text-gray-600 mt-1 leading-relaxed line-clamp-2">
-                          {product.description}
-                        </p>
+                        <span className="h-px flex-1 bg-gray-200" />
                       </div>
+                    )}
+                    <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-8">
+                      {group.products.map((product) => (
+                        <Link
+                          key={product.id}
+                          href={`/products/${product.slug}`}
+                          className="group"
+                        >
+                          <div className="space-y-4">
+                            <div className="relative aspect-[4/3] bg-gray-100 overflow-hidden">
+                              {(product.thumbnail_url || product.hero_image_url) ? (
+                                <Image
+                                  src={product.thumbnail_url || product.hero_image_url!}
+                                  alt={product.name}
+                                  fill
+                                  sizes="(max-width: 768px) 100vw, (max-width: 1280px) 50vw, 33vw"
+                                  className="object-cover group-hover:scale-105 transition-transform duration-500"
+                                />
+                              ) : (
+                                <div className="w-full h-full bg-gradient-to-br from-gray-200 to-gray-100 group-hover:scale-105 transition-transform duration-500" />
+                              )}
+                            </div>
+                            <div>
+                              <h2 className="text-lg font-medium tracking-wide uppercase group-hover:text-brand-copper transition-colors">
+                                {product.name}
+                              </h2>
+                              <p className="text-sm text-gray-600 mt-1 leading-relaxed line-clamp-2">
+                                {product.description}
+                              </p>
+                            </div>
+                          </div>
+                        </Link>
+                      ))}
                     </div>
-                  </Link>
+                  </section>
                 ))}
               </div>
             ) : (
