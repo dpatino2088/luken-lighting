@@ -17,12 +17,16 @@ export interface SkuOption {
 export interface SkuState {
   series: string;
   dim: string;        // standard format code or 'CUSTOM'
-  dimCustom: string;  // custom dimension when dim === 'CUSTOM'
+  dimCustom: string;  // free text when dim === 'CUSTOM' (size, name, code fragment…)
   shape: string;
   length: string;     // linear only (shape === 'L')
   track: string;      // track system — mutually exclusive with profile & Linear shape
   profile: string;    // aluminum profile — mutually exclusive with track & Linear shape
   mounting: string;   // mounting type label (e.g. "Recessed") — part of code + description
+  /** Accessory kind when shape === 'ACC' (CLIP, ADAPT, CABLE… or CUSTOM). */
+  accessoryType: string;
+  /** Free-text accessory type when accessoryType === 'CUSTOM'. */
+  accessoryTypeCustom: string;
   source: string;
   socket: string;
   socketCustom: string; // custom socket when socket === 'CUSTOM'
@@ -41,6 +45,8 @@ export interface SkuState {
   driverVCustom: string; // custom voltage/current when driverV === 'CUSTOM'
   ctrl: string;
   version: string;
+  /** Custom version text when version === 'CUSTOM' (e.g. V5, Rev A). */
+  versionCustom: string;
 }
 
 export const EMPTY_SKU_STATE: SkuState = {
@@ -52,6 +58,8 @@ export const EMPTY_SKU_STATE: SkuState = {
   track: '',
   profile: '',
   mounting: '',
+  accessoryType: '',
+  accessoryTypeCustom: '',
   source: '',
   socket: '',
   socketCustom: '',
@@ -70,6 +78,7 @@ export const EMPTY_SKU_STATE: SkuState = {
   driverVCustom: '',
   ctrl: '',
   version: '',
+  versionCustom: '',
 };
 
 // ── Translation maps (code → human description) ─────────────────────────────
@@ -165,6 +174,18 @@ export const T = {
     RFD: 'RF dimmable',
   },
   shape: { R: 'Round', S: 'Square', L: 'Linear', RT: 'Rectangular', ACC: 'Accessory' },
+  accessoryType: {
+    CLIP: 'Clip',
+    ADAPT: 'Adapter',
+    CABLE: 'Cable',
+    FEED: 'Feed',
+    CONN: 'Connector',
+    BRKT: 'Bracket',
+    COVER: 'Cover',
+    ENDC: 'End cap',
+    JOIN: 'Joiner',
+    SUSP: 'Suspension kit',
+  },
   version: { V2: 'Version 2', V3: 'Version 3', V4: 'Version 4' },
   // NOTE: default Track / Profile option sets — adjust the labels/codes here and
   // in TRACK_OPTIONS / PROFILE_OPTIONS below to match Luken's real catalog.
@@ -244,15 +265,70 @@ export const DIM_OPTIONS: SkuOption[] = [
   { value: 'BR40', label: 'BR40', group: 'Standard lamp formats' },
   { value: 'T8', label: 'T8', group: 'Standard lamp formats' },
   { value: 'T5', label: 'T5', group: 'Standard lamp formats' },
-  { value: 'CUSTOM', label: 'Custom — enter below', group: 'Custom size' },
+  { value: 'CUSTOM', label: 'Custom — enter below', group: 'Custom' },
 ];
 
+/** Fixture shapes only. Accessory mode is driven by Type = Accessories (sets shape ACC). */
 export const SHAPE_OPTIONS: SkuOption[] = [
   { value: 'R', label: 'R – Round' },
   { value: 'S', label: 'S – Square' },
   { value: 'L', label: 'L – Linear' },
   { value: 'RT', label: 'RT – Rectangular' },
-  { value: 'ACC', label: 'ACC – Accessory' },
+];
+
+/** Clear fixture-only segments when entering accessory SKU mode (Type = Accessories). */
+export function enterAccessorySkuMode(state: SkuState): SkuState {
+  return {
+    ...state,
+    shape: 'ACC',
+    dim: '',
+    dimCustom: '',
+    length: '',
+    track: '',
+    profile: '',
+    mounting: '',
+    source: '',
+    socket: '',
+    socketCustom: '',
+    trim: '',
+    cri: '',
+    criCustom: '',
+    cct: '',
+    cctCustom: '',
+    optic: '',
+    opticCustom: '',
+    watts: '',
+    wattsCustom: '',
+    driver: '',
+    driverV: '',
+    driverVCustom: '',
+    ctrl: '',
+  };
+}
+
+/** Leave accessory SKU mode when Type is no longer Accessories. */
+export function leaveAccessorySkuMode(state: SkuState): SkuState {
+  return {
+    ...state,
+    shape: state.shape === 'ACC' ? '' : state.shape,
+    accessoryType: '',
+    accessoryTypeCustom: '',
+  };
+}
+
+/** Accessory subtypes — used when Type = Accessories (shape ACC). SKU: SERIES-ACC-{type}-… */
+export const ACCESSORY_TYPE_OPTIONS: SkuOption[] = [
+  { value: 'CLIP', label: 'CLIP – Clip' },
+  { value: 'ADAPT', label: 'ADAPT – Adapter' },
+  { value: 'CABLE', label: 'CABLE – Cable' },
+  { value: 'FEED', label: 'FEED – Feed' },
+  { value: 'CONN', label: 'CONN – Connector' },
+  { value: 'BRKT', label: 'BRKT – Bracket' },
+  { value: 'COVER', label: 'COVER – Cover' },
+  { value: 'ENDC', label: 'ENDC – End cap' },
+  { value: 'JOIN', label: 'JOIN – Joiner' },
+  { value: 'SUSP', label: 'SUSP – Suspension kit' },
+  { value: 'CUSTOM', label: 'Custom — enter below' },
 ];
 
 // Track & Profile are mutually exclusive linear-system types (with each other and
@@ -428,7 +504,26 @@ export const VERSION_OPTIONS: SkuOption[] = [
   { value: 'V2', label: 'V2' },
   { value: 'V3', label: 'V3' },
   { value: 'V4', label: 'V4' },
+  { value: 'CUSTOM', label: 'Custom — enter below' },
 ];
+
+/** Resolve version SKU code + description (standard V2/V3/V4 or custom). */
+export function resolveVersion(state: Pick<SkuState, 'version' | 'versionCustom'>): {
+  code: string;
+  desc: string | null;
+} {
+  if (state.version === 'CUSTOM') {
+    const raw = (state.versionCustom || '').trim();
+    const code = raw.toUpperCase().replace(/[^A-Z0-9]+/g, '').slice(0, 8);
+    return { code, desc: raw || null };
+  }
+  const code = (state.version || '').trim();
+  if (!code) return { code: '', desc: null };
+  return {
+    code,
+    desc: T.version[code as keyof typeof T.version] || code,
+  };
+}
 
 // ── Builder ─────────────────────────────────────────────────────────────────
 export interface SkuSegment {
@@ -480,6 +575,60 @@ export function buildSku(state: SkuState): SkuResult {
   const add = (val: string, inShort: boolean, desc: string | null, inName = false) => {
     if (val) segs.push({ val, inShort, desc, inName });
   };
+
+  // ── Accessory mode ──────────────────────────────────────────────────────
+  // Shape ACC → SKU is always SERIES-ACC-{type}-… (e.g. ORI-ACC-CLIP-WH).
+  // Fixture segments (size, mounting, source, optic…) are not used.
+  if (shape === 'ACC') {
+    add(series, true, null);
+    add('ACC', true, 'Accessory', true);
+
+    if (state.accessoryType === 'CUSTOM') {
+      const raw = (state.accessoryTypeCustom || '').trim();
+      const code = raw.toUpperCase().replace(/[^A-Z0-9]+/g, '').slice(0, 8);
+      if (code) add(code, true, raw, true);
+    } else {
+      const typeCode = state.accessoryType.trim();
+      if (typeCode) {
+        add(
+          typeCode,
+          true,
+          T.accessoryType[typeCode as keyof typeof T.accessoryType] || typeCode,
+          true
+        );
+      }
+    }
+
+    add(state.color.trim(), true, translate('color', state.color.trim()), true);
+    {
+      const ver = resolveVersion(state);
+      if (ver.code) add(ver.code, false, ver.desc);
+    }
+
+    const shortSegs = segs.filter((s) => s.inShort).map((s) => s.val);
+    const longSegs = segs.map((s) => s.val);
+    // Name body = short segments without the leading series (same as fixtures).
+    const shortBody = (series && shortSegs[0] === series ? shortSegs.slice(1) : shortSegs).join(' ');
+    const nameBody = segs.filter((s) => s.inName).map((s) => s.val).join(' ');
+    const shortDesc = segs
+      .filter((s) => s.inShort && s.desc)
+      .map((s) => s.desc)
+      .join(' / ');
+    const longDesc = segs
+      .filter((s) => s.desc)
+      .map((s) => s.desc)
+      .join(' / ');
+
+    return {
+      shortCode: shortSegs.join('-'),
+      longCode: longSegs.join('-'),
+      shortBody,
+      nameBody,
+      shortDesc,
+      longDesc,
+      segments: segs,
+    };
+  }
 
   // 1 · Series — part of the SKU code only. It is NOT added to the descriptions
   // (desc = null) because the product Name already carries the family/series.
@@ -574,7 +723,10 @@ export function buildSku(state: SkuState): SkuResult {
   }
 
   add(state.ctrl.trim(), false, translate('ctrl', state.ctrl.trim()));
-  add(state.version.trim(), false, translate('version', state.version.trim()));
+  {
+    const ver = resolveVersion(state);
+    if (ver.code) add(ver.code, false, ver.desc);
+  }
 
   const shortSegs = segs.filter((s) => s.inShort).map((s) => s.val);
   const longSegs = segs.map((s) => s.val);

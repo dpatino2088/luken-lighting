@@ -13,7 +13,7 @@ import { PricingFields } from '@/components/admin/PricingFields';
 import { IdentityFields } from '@/components/specsheet/IdentityFields';
 import { useSpecSheetSync } from '@/components/specsheet/useSpecSheetSync';
 import { SheetPreview } from '@/components/specsheet/SheetPreview';
-import { createDefaultSpecSheet, type SpecSheetData } from '@/lib/sku/specSheet';
+import { applyFamilyName, createDefaultSpecSheet, withAutoLastUpdate, type SpecSheetData } from '@/lib/sku/specSheet';
 import { buildSku } from '@/lib/sku/skuRules';
 import { specSheetToVariantFields, cctRange } from '@/lib/sku/mapToLuken';
 import { getSettings } from '@/app/(admin)/admin/settings/actions';
@@ -68,11 +68,11 @@ export default function NewVariantPage() {
     getSettings().then((s) => setBrandLogoUrl(s.brand_logo_url));
   }, []);
 
-  // When a family is chosen, preload its name so the SKU series derives from it.
+  // When a family is chosen, sync productName + SKU series (Prueba → PRU).
   useEffect(() => {
     if (!selectedProductId) return;
     const p = products.find((x) => x.id === selectedProductId);
-    if (p) setData((prev) => (prev.productName === p.name ? prev : { ...prev, productName: p.name }));
+    if (p) setData((prev) => applyFamilyName(prev, p.name));
   }, [selectedProductId, products]);
 
   const skuPreview = useMemo(() => buildSku(data.sku), [data.sku]);
@@ -128,12 +128,13 @@ export default function NewVariantPage() {
       });
 
       const { data: userData } = await supabase.auth.getUser();
+      const sheetData = withAutoLastUpdate(data);
       await supabase.from('spec_sheets').insert({
         product_id: selectedProductId || null,
         variant_id: variant.id,
         product_name: data.productName.trim(),
         code: vf.code,
-        data,
+        data: sheetData,
         created_by: userData.user?.id ?? null,
       });
 
@@ -255,7 +256,15 @@ export default function NewVariantPage() {
           </div>
         </div>
 
-        <VariantBuilderPanel data={data} onChange={setData} sync={sync} productNameEditable={!selectedProductId} />
+        <VariantBuilderPanel
+          data={data}
+          onChange={setData}
+          sync={sync}
+          productNameEditable={!selectedProductId}
+          familyName={selectedProduct?.name ?? null}
+          products={products.map((p) => ({ id: p.id, name: p.name }))}
+          currentProductId={selectedProductId || null}
+        />
       </div>
 
       {/* File & Assets tab */}

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Eye, Save, Printer } from 'lucide-react';
@@ -13,9 +13,10 @@ import { useSpecSheetSync } from '@/components/specsheet/useSpecSheetSync';
 import { SheetPreview } from '@/components/specsheet/SheetPreview';
 import { buildSku } from '@/lib/sku/skuRules';
 import { saveVariantBuilder, updateVariant } from '@/app/(admin)/admin/variants/actions';
+import { uploadSpecSheetPdfFromPreview } from '@/lib/specsheet/uploadSpecSheetPdf';
 import { toast } from '@/components/ui/Toast';
 import type { ProductVariant, ProductCategory, Product, ProductAsset, AppSettings } from '@/lib/types';
-import type { SpecSheetData } from '@/lib/sku/specSheet';
+import { applyFamilyName, deriveSeries, type SpecSheetData } from '@/lib/sku/specSheet';
 
 type Tab = 'builder' | 'product' | 'files' | 'preview';
 
@@ -54,6 +55,35 @@ export function VariantEditTabs({
   const product = products.find((p) => p.id === productId);
   const viewHref = product?.slug ? `/products/${product.slug}/${variant.slug}` : '#';
 
+  // Keep sheet productName + SKU series aligned with the selected family even when
+  // the family was already chosen before this page loaded (onChange alone won't fire).
+  useEffect(() => {
+    if (!productId || !product) return;
+    const wantSeries = deriveSeries(product.name);
+    setData((prev) => {
+      if (prev.productName === product.name && prev.sku.series === wantSeries) return prev;
+      return applyFamilyName(prev, product.name);
+    });
+  }, [productId, product]);
+
+  async function syncDatasheetPdf(okMessage: string) {
+    const code = (data.code || buildSku(data.sku).shortCode || variant.code || '').trim();
+    // Give React a tick so lastUpdate / identity fields are painted on the Preview.
+    await new Promise((r) => setTimeout(r, 80));
+    try {
+      const pdf = await uploadSpecSheetPdfFromPreview(variant.id, code);
+      if (pdf.error) {
+        toast.error(`Saved, but Spec Sheet PDF failed: ${pdf.error}`);
+        return;
+      }
+      toast.success(okMessage);
+    } catch (err) {
+      toast.error(
+        `Saved, but Spec Sheet PDF failed: ${err instanceof Error ? err.message : 'unknown error'}`
+      );
+    }
+  }
+
   async function handleSaveBuilder() {
     setSaving(true);
     const result = await saveVariantBuilder(variant.id, data, {
@@ -63,10 +93,14 @@ export function VariantEditTabs({
     });
     if (result.error) {
       toast.error(result.error);
-    } else {
-      toast.success('Builder & spec sheet saved.');
-      router.refresh();
+      setSaving(false);
+      return;
     }
+    if (result.lastUpdate) {
+      setData((prev) => ({ ...prev, lastUpdate: result.lastUpdate! }));
+    }
+    await syncDatasheetPdf('Builder saved · Spec Sheet PDF updated.');
+    router.refresh();
     setSaving(false);
   }
 
@@ -87,6 +121,9 @@ export function VariantEditTabs({
       setSaving(false);
       return;
     }
+    if (identity.lastUpdate) {
+      setData((prev) => ({ ...prev, lastUpdate: identity.lastUpdate! }));
+    }
 
     const form = document.getElementById('variant-product-form') as HTMLFormElement | null;
     if (form) {
@@ -98,7 +135,7 @@ export function VariantEditTabs({
       }
     }
 
-    toast.success('Product saved.');
+    await syncDatasheetPdf('Product saved · Spec Sheet PDF updated.');
     router.refresh();
     setSaving(false);
   }
@@ -189,7 +226,18 @@ export function VariantEditTabs({
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className={labelCls}>Product (family)</label>
-              <select className={fieldCls} value={productId} onChange={(e) => setProductId(e.target.value)}>
+              <select
+                className={fieldCls}
+                value={productId}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  setProductId(id);
+                  const p = products.find((x) => x.id === id);
+                  // Keep SKU series / productName in sync with the family (Prueba → PRU).
+                  // Otherwise only product_id changes and Re-apply keeps the old ORI prefix.
+                  if (p) setData((prev) => applyFamilyName(prev, p.name));
+                }}
+              >
                 <option value="">— None —</option>
                 {products.map((p) => (
                   <option key={p.id} value={p.id}>{p.name}</option>
@@ -229,7 +277,17 @@ export function VariantEditTabs({
           </p>
         </div>
 
-        <VariantBuilderPanel data={data} onChange={setData} sync={sync} productNameEditable />
+        <VariantBuilderPanel
+          data={data}
+          onChange={setData}
+          sync={sync}
+          // Family dropdown owns the name when a family is selected (same as New variant).
+          productNameEditable={!productId}
+          familyName={product?.name ?? null}
+          products={products.map((p) => ({ id: p.id, name: p.name }))}
+          currentProductId={productId || null}
+          currentVariantId={variant.id}
+        />
       </div>
 
       {/* Product */}
@@ -254,13 +312,23 @@ export function VariantEditTabs({
           File &amp; Assets
         </h2>
         <p className="text-[11px] text-gray-500">
-          Manuals, spec sheets, IES/photometric files, drawings, BIM and product images. Uploads save immediately.
+          Manuals, IES/photometric files, drawings, BIM and product images. Uploads save immediately.
+          The <strong>Spec Sheet / Datasheet (PDF)</strong> is auto-generated from Preview whenever you
+          save the Builder or Product tab.
         </p>
         <FileUploadSection productId={variant.id} assets={assets} />
       </div>
 
-      {/* Preview */}
-      <div hidden={tab !== 'preview'} className="bg-white p-4 border border-gray-200 overflow-x-auto">
+      {/* Preview — kept laid out off-screen when inactive so Save can export PDF
+          without flashing the tab (html2canvas needs real dimensions). */}
+      <div
+        className={
+          tab === 'preview'
+            ? 'bg-white p-4 border border-gray-200 overflow-x-auto'
+            : 'fixed left-[-120vw] top-0 w-[8.5in] pointer-events-none opacity-0'
+        }
+        aria-hidden={tab !== 'preview'}
+      >
         <SheetPreview
           data={data}
           assets={assets}

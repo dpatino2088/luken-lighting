@@ -1,16 +1,24 @@
 'use client';
 
-import { useMemo, useState, type Dispatch, type SetStateAction } from 'react';
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import { SkuFields } from '@/components/specsheet/SkuFields';
-import { DEFAULT_TECH_ROWS, SUBCATEGORY_OPTIONS, type ConfigRow, type SpecSheetData, type TechRow } from '@/lib/sku/specSheet';
-import { buildSku, cctKelvinFromCustom } from '@/lib/sku/skuRules';
+import { RelatedVariantsEditor } from '@/components/specsheet/RelatedVariantsEditor';
+import {
+  applyFamilyName,
+  DEFAULT_TECH_ROWS,
+  SUBCATEGORY_OPTIONS,
+  isAccessoriesType,
+  type SpecSheetData,
+  type TechRow,
+} from '@/lib/sku/specSheet';
+import { buildSku, cctKelvinFromCustom, enterAccessorySkuMode, leaveAccessorySkuMode } from '@/lib/sku/skuRules';
 import { cctRange, criValue, beamValue, wattsValue } from '@/lib/sku/mapToLuken';
 import type { SpecSheetSync } from '@/components/specsheet/useSpecSheetSync';
 
 type SubTab = 'general' | 'config' | 'tech' | 'notes';
 const SUBTABS: { id: SubTab; label: string }[] = [
   { id: 'general', label: 'General data' },
-  { id: 'config', label: 'Configurations' },
+  { id: 'config', label: 'Related Variant' },
   { id: 'tech', label: 'Technical data' },
   { id: 'notes', label: 'Notes' },
 ];
@@ -58,27 +66,62 @@ export function VariantBuilderPanel({
   onChange,
   sync,
   productNameEditable = true,
+  /** Selected product-family name — Re-apply uses this so the series follows the family. */
+  familyName = null,
+  /** Families for the Related Variant picker. */
+  products = [],
+  /** Current family id — Related Variant filter defaults to this. */
+  currentProductId = null,
+  /** Exclude this variant from the Related Variant checkbox list. */
+  currentVariantId = null,
 }: {
   data: SpecSheetData;
   onChange: Dispatch<SetStateAction<SpecSheetData>>;
   sync: SpecSheetSync;
   productNameEditable?: boolean;
+  familyName?: string | null;
+  products?: { id: string; name: string }[];
+  currentProductId?: string | null;
+  currentVariantId?: string | null;
 }) {
   const [tab, setTab] = useState<SubTab>('general');
 
   const { setSku, relinkAll } = sync;
+  const accessoryMode = isAccessoriesType(data.subcategory);
+
+  // Type = Accessories owns accessory SKU mode (SERIES-ACC-…). Shape stays geometry-only.
+  useEffect(() => {
+    if (accessoryMode && data.sku.shape !== 'ACC') {
+      setSku(enterAccessorySkuMode(data.sku));
+    } else if (!accessoryMode && data.sku.shape === 'ACC') {
+      setSku(leaveAccessorySkuMode(data.sku));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accessoryMode]);
+
+  const handleReapply = () => {
+    if (familyName?.trim()) {
+      onChange((prev) => applyFamilyName(prev, familyName));
+      return;
+    }
+    relinkAll();
+  };
 
   const set = <K extends keyof SpecSheetData>(key: K, value: SpecSheetData[K]) =>
     onChange((prev) => ({ ...prev, [key]: value }));
 
-  // ── repeaters ──
-  const updateConfig = (i: number, patch: Partial<ConfigRow>) =>
-    onChange((prev) => ({ ...prev, configuraciones: prev.configuraciones.map((r, idx) => (idx === i ? { ...r, ...patch } : r)) }));
-  const addConfig = () =>
-    onChange((prev) => ({ ...prev, configuraciones: [...prev.configuraciones, { codigo: '', descripcion: '', componente: '' }] }));
-  const removeConfig = (i: number) =>
-    onChange((prev) => ({ ...prev, configuraciones: prev.configuraciones.filter((_, idx) => idx !== i) }));
+  const setType = (subcategory: string) => {
+    onChange((prev) => {
+      const wasAcc = isAccessoriesType(prev.subcategory);
+      const nowAcc = isAccessoriesType(subcategory);
+      let sku = prev.sku;
+      if (nowAcc && !wasAcc) sku = enterAccessorySkuMode(sku);
+      else if (!nowAcc && wasAcc) sku = leaveAccessorySkuMode(sku);
+      return { ...prev, subcategory, sku };
+    });
+  };
 
+  // ── repeaters ──
   const updateTech = (i: number, patch: Partial<TechRow>) =>
     onChange((prev) => ({ ...prev, datosTecnicos: prev.datosTecnicos.map((r, idx) => (idx === i ? { ...r, ...patch } : r)) }));
   const addTech = () =>
@@ -146,16 +189,16 @@ export function VariantBuilderPanel({
 
   return (
     <div className="space-y-6">
-      {/* Subcategory — classifies the variant and drives the grouping / ordering
-          / filtering of the public Product Codes list. Placed first (its own card,
-          matching "Belongs to (family)"): start by choosing the subcategory, then
-          continue. Field width ~1/3 to match the "Product (family)" field. */}
+      {/* Type (stored as subcategory) — classifies the variant and drives the
+          grouping / ordering / filtering of the public Product Codes list.
+          Placed first (its own card, matching "Belongs to (family)"): start by
+          choosing the type, then continue. Field width ~1/3 to match family. */}
       <div className="bg-white border border-gray-200 p-5">
-        <h2 className="text-sm font-semibold uppercase tracking-wide mb-4">Subcategory</h2>
+        <h2 className="text-sm font-semibold uppercase tracking-wide mb-4">Type</h2>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
-            <label className={labelClass}>Subcategory</label>
-            <select className={fieldClass} value={data.subcategory} onChange={(e) => set('subcategory', e.target.value)}>
+            <label className={labelClass}>Type</label>
+            <select className={fieldClass} value={data.subcategory} onChange={(e) => setType(e.target.value)}>
               <option value="">— choose —</option>
               {data.subcategory && !SUBCATEGORY_OPTIONS.includes(data.subcategory as (typeof SUBCATEGORY_OPTIONS)[number]) && (
                 <option value={data.subcategory}>{data.subcategory}</option>
@@ -167,7 +210,9 @@ export function VariantBuilderPanel({
           </div>
         </div>
         <p className="mt-3 text-[11px] text-gray-500">
-          Groups, orders &amp; filters this code in the public <strong>Product Codes</strong> list (e.g. Downlights, Track Line Voltage, Accessories).
+          {accessoryMode
+            ? <>Type <strong>Accessories</strong> unlocks accessory fields and builds SKUs like <span className="font-mono">ORI-ACC-CLIP-WH</span>.</>
+            : <>Groups, orders &amp; filters this code in the public <strong>Product Codes</strong> list. Choose <strong>Accessories</strong> for accessory SKUs.</>}
         </p>
       </div>
 
@@ -193,13 +238,24 @@ export function VariantBuilderPanel({
               </div>
               <button
                 type="button"
-                onClick={relinkAll}
+                onClick={handleReapply}
                 className="shrink-0 border border-gray-300 px-2.5 py-1 text-[11px] font-medium text-gray-600 hover:border-gray-400"
+                title={
+                  familyName
+                    ? `Re-derive series from family “${familyName}”`
+                    : 'Re-derive series from product name'
+                }
               >
                 Re-apply
               </button>
             </div>
-            <SkuFields state={data.sku} onChange={setSku} lumen={systemLumens} onLumenChange={setSystemLumens} />
+            <SkuFields
+              state={data.sku}
+              onChange={setSku}
+              lumen={systemLumens}
+              onLumenChange={setSystemLumens}
+              accessoryMode={accessoryMode}
+            />
           </div>
 
           {/* General fields */}
@@ -219,7 +275,13 @@ export function VariantBuilderPanel({
             </div>
             <div>
               <label className={labelClass}>Last updated</label>
-              <input className={fieldClass} value={data.lastUpdate} onChange={(e) => set('lastUpdate', e.target.value)} placeholder="e.g. 30/06/2026" />
+              <input
+                className={fieldClass + ' bg-gray-100 text-gray-500'}
+                value={data.lastUpdate || '— set automatically on save —'}
+                readOnly
+                tabIndex={-1}
+                title="Updated automatically when you save the builder"
+              />
             </div>
             <div>
               <label className={labelClass}>IP rating</label>
@@ -251,10 +313,6 @@ export function VariantBuilderPanel({
                 ))}
               </select>
             </div>
-            <div>
-              <label className={labelClass}>Main image URL</label>
-              <input className={fieldClass} value={data.photoUrl} onChange={(e) => set('photoUrl', e.target.value)} placeholder="https://…" />
-            </div>
           </div>
 
           <div>
@@ -283,26 +341,15 @@ export function VariantBuilderPanel({
 
         </div>
 
-        {/* Configurations */}
-        <div hidden={tab !== 'config'} className="bg-white border border-gray-200 p-5 space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold uppercase tracking-wide">Configurations</h3>
-            <button type="button" onClick={addConfig} className="bg-gray-900 text-white px-2.5 py-1 text-[11px] font-medium hover:bg-gray-700">
-              + Configuration
-            </button>
-          </div>
-          {data.configuraciones.map((c, i) => (
-            <div key={i} className="flex items-end gap-2">
-              <div className="grid flex-1 grid-cols-1 sm:grid-cols-3 gap-3">
-                <input className={fieldClass} placeholder="Code" value={c.codigo} onChange={(e) => updateConfig(i, { codigo: e.target.value })} />
-                <input className={fieldClass} placeholder="Description" value={c.descripcion} onChange={(e) => updateConfig(i, { descripcion: e.target.value })} />
-                <input className={fieldClass} placeholder="Component" value={c.componente} onChange={(e) => updateConfig(i, { componente: e.target.value })} />
-              </div>
-              <button type="button" onClick={() => removeConfig(i)} className="mb-0.5 shrink-0 border border-red-200 bg-red-50 px-2 py-2 text-[11px] text-red-600 hover:border-red-300">
-                Remove
-              </button>
-            </div>
-          ))}
+        {/* Related variants (stored as configuraciones in the sheet model) */}
+        <div hidden={tab !== 'config'} className="bg-white border border-gray-200 p-5">
+          <RelatedVariantsEditor
+            products={products}
+            currentProductId={currentProductId}
+            currentVariantId={currentVariantId}
+            rows={data.configuraciones}
+            onChange={(configuraciones) => onChange((prev) => ({ ...prev, configuraciones }))}
+          />
         </div>
 
         {/* Technical data */}

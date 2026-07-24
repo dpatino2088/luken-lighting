@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { slugify } from '@/lib/utils';
 import { buildSku } from '@/lib/sku/skuRules';
 import { specSheetToVariantFields } from '@/lib/sku/mapToLuken';
-import type { SpecSheetData } from '@/lib/sku/specSheet';
+import { withAutoLastUpdate, type SpecSheetData } from '@/lib/sku/specSheet';
 
 const IMAGE_BUCKET_TYPES = new Set(['image', 'installed_image', 'dimensions_image', 'photometric_image']);
 
@@ -71,6 +71,9 @@ export async function saveVariantBuilder(
 ) {
   const supabase = await createClient();
   if (!supabase) return { error: 'Supabase not configured' };
+
+  // Last updated is always the save day — never a manual field.
+  data = withAutoLastUpdate(data);
 
   const r = buildSku(data.sku);
   const code = (data.code || r.shortCode).trim();
@@ -170,7 +173,7 @@ export async function saveVariantBuilder(
   revalidatePath(`/admin/variants/${variantId}`);
   revalidatePath('/admin/variants');
   revalidatePath('/products');
-  return { success: true };
+  return { success: true, lastUpdate: data.lastUpdate };
 }
 
 /** Asset types that represent a single slot (re-upload replaces previous). */
@@ -178,6 +181,8 @@ const REPLACE_ON_UPLOAD = new Set([
   'image',
   'photometric_image',
   'dimensions_image',
+  // Auto-generated Preview PDF + manual datasheet uploads share one slot.
+  'datasheet',
 ]);
 
 export async function saveVariantAsset(

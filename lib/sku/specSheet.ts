@@ -109,6 +109,19 @@ export const SUBCATEGORY_OPTIONS = [
   'Accessories',
 ] as const;
 
+/** Type = Accessories drives accessory SKU mode (SERIES-ACC-…) — not Shape. */
+export function isAccessoriesType(subcategory: string | null | undefined): boolean {
+  return (subcategory || '').trim().toLowerCase() === 'accessories';
+}
+
+/**
+ * Related Variant “Component” = Type (subcategory) as stored on the variant’s
+ * sheet. Never invent Shape / Fixture / mounting labels.
+ */
+export function componentFromType(subcategory: string | null | undefined): string {
+  return (subcategory || '').trim();
+}
+
 export const MONTAJE_OPTIONS = [
   'Recessed',
   'Surface mounted',
@@ -145,6 +158,19 @@ export const DEFAULT_TECH_ROWS: TechRow[] = [
   { campo: 'Emission flux > 90°', valor: '', unidad: 'lm', locked: true },
   { campo: 'Light Output Ratio (L.O.R.)', valor: '', unidad: '%', locked: true },
 ];
+
+/** Spec-sheet “Last updated” stamp (DD/MM/YYYY), set automatically on save. */
+export function formatSheetDate(d: Date = new Date()): string {
+  const dd = String(d.getDate()).padStart(2, '0');
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  return `${dd}/${mm}/${yyyy}`;
+}
+
+/** Stamp `lastUpdate` to today before persisting the sheet. */
+export function withAutoLastUpdate(data: SpecSheetData, d: Date = new Date()): SpecSheetData {
+  return { ...data, lastUpdate: formatSheetDate(d) };
+}
 
 export function createDefaultSpecSheet(): SpecSheetData {
   return {
@@ -264,6 +290,44 @@ export function deriveIdentity(d: SpecSheetData): {
     code: r.shortCode,
     codeDescription: r.shortDesc,
     description: composeAutoDescription(r.longDesc, d),
+  };
+}
+
+/**
+ * Apply a product-family name onto the sheet: updates `productName`, re-derives
+ * the SKU series (e.g. Prueba → PRU), re-links series + identity fields.
+ * Used when the admin picks a different family in the Builder — without this,
+ * only `product_id` changes and Re-apply keeps deriving from the old name (ORI).
+ */
+export function applyFamilyName(prev: SpecSheetData, familyName: string): SpecSheetData {
+  const productName = (familyName || '').trim();
+  const series = deriveSeries(productName);
+  if (
+    prev.productName === productName &&
+    prev.sku.series === series &&
+    prev.seriesLinked
+  ) {
+    return prev;
+  }
+  const next: SpecSheetData = {
+    ...prev,
+    productName,
+    seriesLinked: true,
+    sku: { ...prev.sku, series },
+    link: {
+      name: true,
+      code: true,
+      codeDescription: true,
+      description: true,
+    },
+  };
+  const derived = deriveIdentity(next);
+  return {
+    ...next,
+    name: derived.name,
+    code: derived.code,
+    codeDescription: derived.codeDescription,
+    description: derived.description,
   };
 }
 

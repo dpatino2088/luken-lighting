@@ -142,18 +142,18 @@ export function SheetPreview({
           <tr>
             <td className="align-top px-[0.5in] pt-[0.5in] pb-[0.5in] print:py-0">
               <div className="space-y-5 text-[11px] leading-relaxed text-gray-800">
-        {/* Header: product image (left) + Luken wordmark (right) + code bar */}
-        <div className="flex items-stretch gap-4 break-inside-avoid">
-          <div className="w-[38%] max-w-[220px] aspect-square shrink-0 bg-white border border-gray-200 flex items-center justify-center overflow-hidden">
-            {mainImage ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={mainImage} alt={title} className="h-full w-full object-contain" />
-            ) : (
-              <span className="text-gray-300 text-[10px] uppercase tracking-widest text-center px-2">Product image</span>
-            )}
-          </div>
-          <div className="flex-1 flex flex-col justify-between min-w-0">
-            <div className="flex justify-end items-start">
+        {/* Header: image + logo, then full-width code bar (CODE flush right + padding) */}
+        <div className="break-inside-avoid space-y-0">
+          <div className="flex items-start gap-4">
+            <div className="w-[38%] max-w-[220px] aspect-square shrink-0 bg-white border border-gray-200 flex items-center justify-center overflow-hidden">
+              {mainImage ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={mainImage} alt={title} className="h-full w-full object-contain" />
+              ) : (
+                <span className="text-gray-300 text-[10px] uppercase tracking-widest text-center px-2">Product image</span>
+              )}
+            </div>
+            <div className="flex-1 flex justify-end items-start min-w-0 pt-1">
               {brandLogoUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={brandLogoUrl} alt="Brand logo" className="max-h-12 max-w-[200px] object-contain" />
@@ -161,9 +161,12 @@ export function SheetPreview({
                 <span className="text-3xl font-light tracking-tight">Luken</span>
               )}
             </div>
-            <div className="-ml-4 bg-gray-900 text-white text-[11px] font-mono px-3 py-[5px] text-right truncate">
-              {code ? `CODE: ${code}` : <span className="text-gray-400">CODE</span>}
-            </div>
+          </div>
+          {/* Black bar: full width, CODE always right-aligned with side padding (ref) */}
+          <div className="mt-3 flex h-7 items-center justify-end bg-gray-900 px-3">
+            <span className="font-mono text-[11px] leading-none text-white truncate max-w-full text-right">
+              {code ? `CODE: ${code}` : 'CODE'}
+            </span>
           </div>
         </div>
 
@@ -203,11 +206,11 @@ export function SheetPreview({
           <p>{data.description || <Placeholder>—</Placeholder>}</p>
         </section>
 
-        {/* Product configurations (hidden when there are none) */}
+        {/* Related variants (hidden when there are none) */}
         {configRows.length > 0 && (
           <section>
             <h2 className="text-[10px] font-semibold uppercase tracking-widest text-gray-500 border-b border-gray-300 pb-1 mb-2">
-              Product configurations
+              Related Variant
             </h2>
             <table className="w-full">
               <thead>

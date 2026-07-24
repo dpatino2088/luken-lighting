@@ -1,10 +1,9 @@
 import { Fragment } from 'react';
 import Link from 'next/link';
-import Image from 'next/image';
 import { ProductVariant } from '@/lib/types';
 import { formatCCT } from '@/lib/utils';
-import { ExternalLink, Lightbulb } from 'lucide-react';
-import { getLatestAssetUrl } from '@/lib/assets';
+import { ExternalLink } from 'lucide-react';
+import { VariantThumb } from '@/components/VariantThumb';
 
 interface VariantsTableProps {
   variants: ProductVariant[];
@@ -23,11 +22,6 @@ const CONTROL_LABELS: Record<string, string> = {
   push: 'Push-dim',
 };
 
-/** Latest primary image for a variant → used as the row thumbnail. */
-function thumbUrl(v: ProductVariant): string | null {
-  return getLatestAssetUrl(v.assets, 'image');
-}
-
 /** Group the (already filtered) variants into ordered sections by `_group`. */
 function groupVariants(variants: ProductVariant[]): { name: string; items: ProductVariant[] }[] {
   const map = new Map<string, { sort: number; items: ProductVariant[] }>();
@@ -40,21 +34,6 @@ function groupVariants(variants: ProductVariant[]): { name: string; items: Produ
   return [...map.entries()]
     .sort((a, b) => a[1].sort - b[1].sort)
     .map(([name, { items }]) => ({ name, items }));
-}
-
-function Thumb({ v, className = 'h-11 w-11' }: { v: ProductVariant; className?: string }) {
-  const url = thumbUrl(v);
-  return (
-    <div className={`relative shrink-0 overflow-hidden bg-gray-100 ${className}`}>
-      {url ? (
-        <Image src={url} alt={v.full_code || v.code || ''} fill sizes="44px" className="object-cover" />
-      ) : (
-        <div className="flex h-full w-full items-center justify-center">
-          <Lightbulb className="h-4 w-4 text-gray-300" />
-        </div>
-      )}
-    </div>
-  );
 }
 
 export function VariantsTable({ variants, productSlug }: VariantsTableProps) {
@@ -123,7 +102,7 @@ export function VariantsTable({ variants, productSlug }: VariantsTableProps) {
                   >
                     <td className="px-5 py-3">
                       <Link href={variantHref(v)} target="_blank" className="block">
-                        <Thumb v={v} />
+                        <VariantThumb v={v} />
                       </Link>
                     </td>
                     <td className="px-5 py-3.5">
@@ -186,7 +165,7 @@ export function VariantsTable({ variants, productSlug }: VariantsTableProps) {
                 target="_blank"
                 className="flex gap-3 border border-gray-200 p-4 hover:border-gray-400 transition-colors"
               >
-                <Thumb v={v} className="h-14 w-14" />
+                <VariantThumb v={v} className="h-14 w-14" />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-start justify-between mb-2 gap-2">
                     <p className="text-sm font-medium text-gray-900 break-all">{v.full_code || v.code}</p>

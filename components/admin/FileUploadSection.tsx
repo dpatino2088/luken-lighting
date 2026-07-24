@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Upload, FileText, Image as ImageIcon, FileSpreadsheet, Box, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
@@ -40,6 +40,10 @@ export function FileUploadSection({ productId, assets: initialAssets }: Props) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedType, setSelectedType] = useState('');
 
+  useEffect(() => {
+    setAssets(initialAssets);
+  }, [initialAssets]);
+
   const handleUpload = async (assetType: string, file: File) => {
     const isImage = IMAGE_BUCKET_TYPES.has(assetType);
     // Size guard applies to images only; documents (Revit/3D/etc.) may be large.
@@ -68,7 +72,11 @@ export function FileUploadSection({ productId, assets: initialAssets }: Props) {
 
       const { error: uploadError } = await supabase.storage
         .from(bucket)
-        .upload(filePath, uploadFile, { upsert: true, cacheControl: '31536000' });
+        .upload(filePath, uploadFile, {
+          upsert: true,
+          cacheControl: '31536000',
+          contentType: uploadFile.type || undefined,
+        });
 
       if (uploadError) {
         toast.error(`Upload failed: ${uploadError.message}`);
@@ -86,7 +94,13 @@ export function FileUploadSection({ productId, assets: initialAssets }: Props) {
       if (result.error) {
         toast.error(result.error);
       } else if (result.asset) {
-        setAssets((prev) => [...prev, result.asset as ProductAsset]);
+        // Singleton slots (image / datasheet / …) replace previous rows server-side.
+        const singleton = new Set(['image', 'photometric_image', 'dimensions_image', 'datasheet']);
+        setAssets((prev) =>
+          singleton.has(assetType)
+            ? [...prev.filter((a) => a.type !== assetType), result.asset as ProductAsset]
+            : [...prev, result.asset as ProductAsset]
+        );
         toast.success('File uploaded.');
         // Refresh server data so the Preview tab picks up the new asset.
         router.refresh();
@@ -170,10 +184,15 @@ export function FileUploadSection({ productId, assets: initialAssets }: Props) {
           return (
             <div key={group.value} className="border border-gray-200 p-4">
               <div className="flex items-center justify-between mb-3">
-                <div className="flex items-center gap-2">
-                  <Icon className="w-4 h-4 text-gray-500" />
+                <div className="flex items-center gap-2 min-w-0">
+                  <Icon className="w-4 h-4 text-gray-500 shrink-0" />
                   <span className="text-sm font-medium">{group.label}</span>
                   <span className="text-xs text-gray-400">({group.files.length})</span>
+                  {group.value === 'datasheet' && (
+                    <span className="text-[10px] uppercase tracking-wide text-gray-400 truncate">
+                      Auto on Save builder
+                    </span>
+                  )}
                 </div>
                 <Button
                   type="button"
@@ -187,7 +206,7 @@ export function FileUploadSection({ productId, assets: initialAssets }: Props) {
                   ) : (
                     <>
                       <Upload className="w-3 h-3 mr-1" />
-                      Upload
+                      {group.value === 'datasheet' ? 'Replace' : 'Upload'}
                     </>
                   )}
                 </Button>
