@@ -98,9 +98,15 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
 export function SkuFields({
   state,
   onChange,
+  lumen,
+  onLumenChange,
 }: {
   state: SkuState;
   onChange: (s: SkuState) => void;
+  /** System luminous flux (lm). NOT part of the SKU — shown in the Light source
+   *  group for convenience; stored as the "System lumens" Technical-data row. */
+  lumen?: string;
+  onLumenChange?: (v: string) => void;
 }) {
   const set = (patch: Partial<SkuState>) => onChange({ ...state, ...patch });
   const r = buildSku(state);
@@ -188,6 +194,20 @@ export function SkuFields({
         )}
         <SkuSelect label="Trim" value={state.trim} onChange={(v) => set({ trim: v })} options={TRIM_OPTIONS} />
         <SkuSelect label="Color / finish" value={state.color} onChange={(v) => set({ color: v })} options={COLOR_OPTIONS} />
+        {onLumenChange && (
+          <div>
+            <label className={labelClass}>Lumen (lm)</label>
+            <input
+              className={inputClass}
+              type="number"
+              inputMode="numeric"
+              value={lumen ?? ''}
+              onChange={(e) => onLumenChange(e.target.value)}
+              placeholder="e.g. 1200"
+            />
+            <p className="mt-1 text-[11px] text-gray-400">Not in the SKU. Shows in General data &amp; description.</p>
+          </div>
+        )}
       </Section>
 
       <Section title="Light quality">

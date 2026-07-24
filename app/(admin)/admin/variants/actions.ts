@@ -173,6 +173,13 @@ export async function saveVariantBuilder(
   return { success: true };
 }
 
+/** Asset types that represent a single slot (re-upload replaces previous). */
+const REPLACE_ON_UPLOAD = new Set([
+  'image',
+  'photometric_image',
+  'dimensions_image',
+]);
+
 export async function saveVariantAsset(
   variantId: string,
   assetType: string,
@@ -182,6 +189,27 @@ export async function saveVariantAsset(
 ) {
   const supabase = await createClient();
   if (!supabase) return { error: 'Supabase not configured' };
+
+  // Replacing the primary / sheet slot image must remove older rows of the same
+  // type. Otherwise galleries and cards keep showing assets[0] (first upload).
+  if (REPLACE_ON_UPLOAD.has(assetType)) {
+    const { data: previous } = await supabase
+      .from('product_assets')
+      .select('id, file_url, type')
+      .eq('variant_id', variantId)
+      .eq('type', assetType);
+
+    for (const asset of previous || []) {
+      if (asset.file_url?.includes('/storage/v1/object/public/')) {
+        const bucket = IMAGE_BUCKET_TYPES.has(asset.type) ? 'product-images' : 'documents';
+        const pathParts = asset.file_url.split(`/storage/v1/object/public/${bucket}/`);
+        if (pathParts[1]) {
+          await supabase.storage.from(bucket).remove([decodeURIComponent(pathParts[1])]);
+        }
+      }
+      await supabase.from('product_assets').delete().eq('id', asset.id);
+    }
+  }
 
   const { error: dbError, data } = await supabase
     .from('product_assets')
@@ -198,6 +226,9 @@ export async function saveVariantAsset(
   if (dbError) return { error: dbError.message };
 
   revalidatePath(`/admin/variants/${variantId}`);
+  revalidatePath('/admin/variants');
+  revalidatePath('/products');
+  revalidatePath('/');
   return { success: true, asset: data };
 }
 

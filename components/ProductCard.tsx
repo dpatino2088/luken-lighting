@@ -2,15 +2,15 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { ProductVariant } from '@/lib/types';
 import { formatCCT } from '@/lib/utils';
+import { getLatestAssetUrl } from '@/lib/assets';
 
 interface ProductCardProps {
   product: ProductVariant;
 }
 
 export function ProductCard({ product }: ProductCardProps) {
-  // Get main product image
-  const mainImage = product.assets?.find(asset => asset.type === 'image');
-  const imageUrl = mainImage?.file_url || '/images/placeholder-product.jpg';
+  const imageUrl =
+    getLatestAssetUrl(product.assets, 'image') || '/images/placeholder-product.jpg';
 
   return (
     <Link 

@@ -90,6 +90,28 @@ export function VariantBuilderPanel({
 
   const skuPreview = useMemo(() => buildSku(data.sku), [data.sku]);
 
+  // Lumen (system luminous flux) is a General-data attribute, edited here and
+  // stored in the "System lumens" Technical-data row (→ variant.lumens_system).
+  // It is intentionally NOT part of the SKU.
+  const systemLumens =
+    data.datosTecnicos.find((t) => (t.campo || '').trim().toLowerCase() === 'system lumens')?.valor ?? '';
+  const setSystemLumens = (value: string) =>
+    onChange((prev) => {
+      const idx = prev.datosTecnicos.findIndex(
+        (t) => (t.campo || '').trim().toLowerCase() === 'system lumens'
+      );
+      if (idx >= 0) {
+        return {
+          ...prev,
+          datosTecnicos: prev.datosTecnicos.map((r, i) => (i === idx ? { ...r, valor: value } : r)),
+        };
+      }
+      return {
+        ...prev,
+        datosTecnicos: [...prev.datosTecnicos, { campo: 'System lumens', valor: value, unidad: 'lm', locked: true }],
+      };
+    });
+
   // Values the sheet auto-fills from the Builder (Light quality). Shown here as
   // read-only rows so the Technical data tab is never blank/confusing and the
   // user can see exactly what will appear on the ficha without retyping it.
@@ -118,7 +140,9 @@ export function VariantBuilderPanel({
   // update/remove handlers still target the right row in datosTecnicos.
   const extraTechRows = data.datosTecnicos
     .map((t, i) => ({ t, i }))
-    .filter(({ t }) => !isDerivedField(t.campo));
+    // "System lumens" is edited in General data (Lumen field), so hide it here
+    // to avoid a confusing double entry of the same value.
+    .filter(({ t }) => !isDerivedField(t.campo) && (t.campo || '').trim().toLowerCase() !== 'system lumens');
 
   return (
     <div className="space-y-6">
@@ -175,7 +199,7 @@ export function VariantBuilderPanel({
                 Re-apply
               </button>
             </div>
-            <SkuFields state={data.sku} onChange={setSku} />
+            <SkuFields state={data.sku} onChange={setSku} lumen={systemLumens} onLumenChange={setSystemLumens} />
           </div>
 
           {/* General fields */}
@@ -301,8 +325,8 @@ export function VariantBuilderPanel({
           <p className="text-[11px] text-gray-500">
             <strong>CCT, CRI, beam angle and System wattage are added to the sheet automatically</strong> from
             your Builder choices (Light quality / Power) — no need to retype them here. Use this table only for
-            <strong> extra measured</strong> values (system / source lumens, source wattage, efficacy, MacAdam
-            step, lifetime).
+            <strong> extra measured</strong> values (source lumens, source wattage, efficacy, MacAdam
+            step, lifetime). <strong>Lumen (system)</strong> is set in <strong>General data</strong>.
           </p>
 
           {/* Read-only preview of the values auto-filled from the Builder. */}

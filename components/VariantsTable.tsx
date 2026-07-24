@@ -1,9 +1,10 @@
 import { Fragment } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { ProductVariant, ProductAsset } from '@/lib/types';
+import { ProductVariant } from '@/lib/types';
 import { formatCCT } from '@/lib/utils';
 import { ExternalLink, Lightbulb } from 'lucide-react';
+import { getLatestAssetUrl } from '@/lib/assets';
 
 interface VariantsTableProps {
   variants: ProductVariant[];
@@ -22,9 +23,9 @@ const CONTROL_LABELS: Record<string, string> = {
   push: 'Push-dim',
 };
 
-/** First image asset for a variant → used as the row thumbnail. */
+/** Latest primary image for a variant → used as the row thumbnail. */
 function thumbUrl(v: ProductVariant): string | null {
-  return v.assets?.find((a: ProductAsset) => a.type === 'image')?.file_url || null;
+  return getLatestAssetUrl(v.assets, 'image');
 }
 
 /** Group the (already filtered) variants into ordered sections by `_group`. */

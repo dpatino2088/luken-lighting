@@ -1,25 +1,17 @@
 'use client';
 
-import { type SpecSheetData, type TechRow } from '@/lib/sku/specSheet';
+import { primaryLumen, type SpecSheetData, type TechRow } from '@/lib/sku/specSheet';
 import { buildSku, skuColorName, skuDriverControlText, skuTrackName, skuProfileName, cctKelvinFromCustom } from '@/lib/sku/skuRules';
 import { cctRange, criValue, beamValue, wattsValue } from '@/lib/sku/mapToLuken';
 import type { ProductAsset } from '@/lib/types';
+import { getLatestAssetUrl } from '@/lib/assets';
 
 function Placeholder({ children }: { children: React.ReactNode }) {
   return <span className="text-gray-300">{children}</span>;
 }
 
 function assetUrl(assets: ProductAsset[] | undefined, type: string): string {
-  const matches = (assets || []).filter((a) => a.type === type && a.file_url);
-  if (matches.length === 0) return '';
-  // Use the most recently uploaded asset of this type (there can be several).
-  const latest = matches.reduce((newest, a) =>
-    new Date(a.created_at).getTime() >= new Date(newest.created_at).getTime() ? a : newest,
-  );
-  // Cache-bust keyed to the asset id so the browser (and the print pipeline)
-  // can never render a stale, previously cached image.
-  const sep = latest.file_url.includes('?') ? '&' : '?';
-  return `${latest.file_url}${sep}v=${encodeURIComponent(latest.id)}`;
+  return getLatestAssetUrl(assets, type, { cacheBust: true }) || '';
 }
 
 export function SheetPreview({
@@ -62,12 +54,18 @@ export function SheetPreview({
 
   const manualTech = data.datosTecnicos.filter((t) => t.campo);
 
+  // Luminous flux (System/Source lumens) is surfaced as a General-data attribute
+  // and in the description — never in the SKU. It is removed from Technical data
+  // below so the same value is not shown twice.
+  const lumen = primaryLumen(data);
+
   // General data rows come from the Builder / Product fields. Only rows that
   // actually have a value are shown, so accessories (e.g. a connector with no
   // color / mounting / driver) don't render a column of empty "—" fields.
   const generalRows = [
     { label: 'Dimensions', value: dims ? `${dims} mm` : '' },
     { label: 'Weight', value: data.peso ? `${data.peso} kg` : '' },
+    { label: 'Lumen', value: lumen ? `${lumen.value} ${lumen.unit}` : '' },
     { label: 'Track', value: skuTrackName(data.sku.track) },
     { label: 'Profile', value: skuProfileName(data.sku.profile) },
     { label: 'Color', value: colorName },
@@ -113,7 +111,10 @@ export function SheetPreview({
   // Drop any manual rows that alias to those fields so stale/legacy rows (e.g.
   // an old "Color temperature: 0") can never override the real derived value.
   const derivedKeys = new Set(['cct', 'cri', 'beam', 'watts']);
-  const manualExtra = manualTech.filter((t) => !derivedKeys.has(norm(t.campo)));
+  const lumenCampo = lumen?.campo.trim().toLowerCase();
+  const manualExtra = manualTech.filter(
+    (t) => !derivedKeys.has(norm(t.campo)) && t.campo.trim().toLowerCase() !== lumenCampo
+  );
   const techRows: TechRow[] = [...derivedTech, ...manualExtra];
   const configRows = data.configuraciones.filter((c) => c.codigo || c.descripcion || c.componente);
   const overviewLines = (familyOverview || '')

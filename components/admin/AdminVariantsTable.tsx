@@ -1,15 +1,17 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, Fragment } from 'react';
 import Link from 'next/link';
 import { Search, Eye, Edit, ImageOff, ChevronLeft, ChevronRight } from 'lucide-react';
 import { DeleteVariantButton } from './DeleteVariantButton';
 import { calcMsrp, formatUsd } from '@/lib/pricing';
 
 interface AssetSlim {
+  id?: string;
   file_url: string;
   type: string;
   sort_order: number;
+  created_at?: string;
 }
 
 interface VariantRow {
@@ -38,7 +40,15 @@ interface Props {
 
 function getFirstImage(assets?: AssetSlim[]): string | null {
   if (!assets || assets.length === 0) return null;
-  const images = assets.filter((a) => a.type === 'image').sort((a, b) => a.sort_order - b.sort_order);
+  // Prefer newest upload (re-uploads must not keep showing the first image).
+  const images = assets
+    .filter((a) => a.type === 'image' && a.file_url)
+    .sort((a, b) => {
+      const aT = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const bT = b.created_at ? new Date(b.created_at).getTime() : 0;
+      if (bT !== aT) return bT - aT;
+      return (b.sort_order ?? 0) - (a.sort_order ?? 0);
+    });
   return images[0]?.file_url || null;
 }
 
@@ -76,10 +86,34 @@ export function AdminVariantsTable({ variants, categories, products }: Props) {
     return list;
   }, [variants, search, categoryFilter, productFilter]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+  // Category display order (follows product_categories.sort_order); anything with
+  // no / unknown category sinks to the bottom under "Uncategorized".
+  const categoryRank = useMemo(() => {
+    const m = new Map<string, number>();
+    categories.forEach((c, i) => m.set(c.id, i));
+    return m;
+  }, [categories]);
+
+  // Keep the list sub-categorized and alphabetical: group by category (in the
+  // established order), then sort by name within each category so nothing is
+  // mixed together.
+  const sorted = useMemo(() => {
+    const rank = (v: VariantRow) =>
+      v.category_id && categoryRank.has(v.category_id)
+        ? categoryRank.get(v.category_id)!
+        : Number.MAX_SAFE_INTEGER;
+    return [...filtered].sort((a, b) => {
+      const ra = rank(a);
+      const rb = rank(b);
+      if (ra !== rb) return ra - rb;
+      return (a.name || a.code || '').localeCompare(b.name || b.code || '');
+    });
+  }, [filtered, categoryRank]);
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
   const safePage = Math.min(page, totalPages);
   const start = (safePage - 1) * pageSize;
-  const pageVariants = filtered.slice(start, start + pageSize);
+  const pageVariants = sorted.slice(start, start + pageSize);
 
   const handleSearchChange = (val: string) => {
     setSearch(val);
@@ -142,13 +176,25 @@ export function AdminVariantsTable({ variants, categories, products }: Props) {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {pageVariants.map((variant) => {
+              {pageVariants.map((variant, idx) => {
                 const cost = variant.cost_usd ? Number(variant.cost_usd) : null;
                 const dp = variant.distributor_price ? Number(variant.distributor_price) : null;
                 const imgUrl = getFirstImage(variant.assets);
+                const catName = variant.category?.name || 'Uncategorized';
+                const prev = pageVariants[idx - 1];
+                const prevCatName = prev ? prev.category?.name || 'Uncategorized' : null;
+                const showHeader = catName !== prevCatName;
 
                 return (
-                  <tr key={variant.id} className="hover:bg-gray-50 transition-colors">
+                  <Fragment key={variant.id}>
+                  {showHeader && (
+                    <tr className="bg-gray-50/70">
+                      <td colSpan={10} className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-gray-500">
+                        {catName}
+                      </td>
+                    </tr>
+                  )}
+                  <tr className="hover:bg-gray-50 transition-colors">
                     <td className="px-2 py-1.5">
                       {imgUrl ? (
                         <img src={imgUrl} alt="" className="w-10 h-10 object-cover border border-gray-200" />
@@ -198,6 +244,7 @@ export function AdminVariantsTable({ variants, categories, products }: Props) {
                       </div>
                     </td>
                   </tr>
+                  </Fragment>
                 );
               })}
             </tbody>

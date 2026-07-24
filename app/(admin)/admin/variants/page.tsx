@@ -28,7 +28,7 @@ export default async function AdminVariantsPage() {
   const [variantsRes, categoriesRes, productsRes] = await Promise.all([
     supabase
       .from('product_variants')
-      .select(`*, category:product_categories(id, name), product:products(id, name, slug), assets:product_assets(file_url, type, sort_order)`)
+      .select(`*, category:product_categories(id, name), product:products(id, name, slug), assets:product_assets(id, file_url, type, sort_order, created_at)`)
       .order('created_at', { ascending: false }),
     supabase.from('product_categories').select('id, name').order('sort_order'),
     supabase.from('products').select('id, name').order('sort_order'),

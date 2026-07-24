@@ -209,22 +209,46 @@ export function deriveSeries(name: string): string {
   return words.join('-') + trailingNum;
 }
 
+/**
+ * The primary luminous flux to surface as "Lumen" (a General-data attribute and
+ * a description token). Prefers the System lumens value; falls back to Source
+ * lumens. Reads from the Technical-data rows so it is NOT part of the SKU.
+ * Returns null when neither has a value.
+ */
+export function primaryLumen(
+  d: SpecSheetData
+): { campo: string; value: string; unit: string } | null {
+  const rows = d.datosTecnicos || [];
+  const findRow = (name: string) =>
+    rows.find((t) => (t.campo || '').trim().toLowerCase() === name && (t.valor || '').trim());
+  const row = findRow('system lumens') ?? findRow('source lumens');
+  if (!row) return null;
+  return {
+    campo: (row.campo || '').trim(),
+    value: (row.valor || '').trim(),
+    unit: (row.unidad || '').trim() || 'lm',
+  };
+}
+
 // The auto description = SKU long description (which already carries the
-// mounting type, since it is a SKU segment) + the structured product attributes
-// owned by the Builder (material, IP rating, electrical class) so the
-// description reflects the full product. Track / Profile products (linear
-// cross-sections) also get a "W x H x D mm" token built from the dimensions,
-// right after the SKU description.
+// mounting type, since it is a SKU segment) + the luminous flux (Lumen) + the
+// structured product attributes owned by the Builder (material, IP rating,
+// electrical class) so the description reflects the full product. Lumen comes
+// from the Technical data (System/Source lumens), never from the SKU. Track /
+// Profile products (linear cross-sections) also get a "W x H x D mm" token built
+// from the dimensions, right after the SKU description.
 export function composeAutoDescription(longDesc: string, d: SpecSheetData): string {
   const isTrackOrProfile = Boolean((d.sku.track || '').trim() || (d.sku.profile || '').trim());
   const dimToken = isTrackOrProfile
     ? [d.ancho, d.alto, d.fondo].map((s) => (s || '').trim()).filter(Boolean).join(' x ')
     : '';
   const dimensionPart = dimToken ? `${dimToken}mm` : '';
+  const lm = primaryLumen(d);
+  const lumenPart = lm ? `${lm.value} ${lm.unit}` : '';
   const extras = [d.material, d.ipRating, d.electricalClass]
     .map((s) => (s || '').trim())
     .filter(Boolean);
-  return [longDesc, dimensionPart, ...extras].filter(Boolean).join(' / ');
+  return [longDesc, dimensionPart, lumenPart, ...extras].filter(Boolean).join(' / ');
 }
 
 /** The identity values (name / code / descriptions) the SKU would auto-generate. */

@@ -13,6 +13,7 @@ import {
   ASSET_TYPE_LABELS,
   ASSET_TYPE_ICONS,
 } from './product-constants';
+import { getLatestAssetUrl, sortAssetsNewestFirst } from '@/lib/assets';
 
 /* ─── Variant detail view — web datasheet ─────────────────────────────────── */
 
@@ -23,17 +24,21 @@ export function VariantView({
   variant: any;
   relatedVariants: ProductVariant[];
 }) {
-  const images =
-    variant.assets?.filter((a: ProductAsset) => a.type === 'image') || [];
-  const installedImages =
-    variant.assets?.filter((a: ProductAsset) => a.type === 'installed_image') || [];
-  const dimensionsImages =
-    variant.assets?.filter((a: ProductAsset) => a.type === 'dimensions_image') || [];
-  const photometricImages =
-    variant.assets?.filter((a: ProductAsset) => a.type === 'photometric_image') || [];
+  const allAssets: ProductAsset[] = variant.assets || [];
+  const images = sortAssetsNewestFirst(allAssets.filter((a) => a.type === 'image'));
+  const installedImages = sortAssetsNewestFirst(
+    allAssets.filter((a) => a.type === 'installed_image'),
+  );
+  const dimensionsImages = sortAssetsNewestFirst(
+    allAssets.filter((a) => a.type === 'dimensions_image'),
+  );
+  const photometricImages = sortAssetsNewestFirst(
+    allAssets.filter((a) => a.type === 'photometric_image'),
+  );
   const documents =
     variant.assets?.filter((a: ProductAsset) => !IMAGE_ASSET_TYPES.has(a.type)) || [];
-  const mainImage = images[0]?.file_url || '/images/placeholder-product.jpg';
+  const mainImage =
+    getLatestAssetUrl(variant.assets, 'image') || '/images/placeholder-product.jpg';
 
   const documentsByType = documents.reduce(
     (acc: Record<string, ProductAsset[]>, doc: ProductAsset) => {
