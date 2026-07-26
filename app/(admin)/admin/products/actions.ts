@@ -60,8 +60,9 @@ export async function createProduct(formData: FormData) {
  * SKU builder keep showing the first name forever.
  */
 async function cascadeProductRename(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  supabase: any,
+  supabase: {
+    from: (table: string) => any;
+  },
   productId: string,
   newName: string,
 ) {
