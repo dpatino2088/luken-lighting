@@ -49,8 +49,10 @@ export default async function ProductsPage({ searchParams }: ProductsPageProps) 
   }
 
   const [categoriesRes, productsRes] = await Promise.all([
+    // Categories keep catalog section order (Downlights → Spotlights → …).
     supabase.from('product_categories').select('*').order('sort_order'),
-    supabase.from('products').select('*').order('sort_order'),
+    // Families are listed A–Z by name (not sort_order / insertion order).
+    supabase.from('products').select('*').order('name'),
   ]);
 
   const categories = (categoriesRes.data ?? []) as ProductCategory[];
@@ -80,10 +82,9 @@ export default async function ProductsPage({ searchParams }: ProductsPageProps) 
     );
   }
 
-  // Always keep a fixed order by system/category (as defined by
-  // product_categories.sort_order — e.g. Downlights first, then the next, ...),
-  // never by product insertion order. Within a category: product sort_order,
-  // then name. Products with no category go last.
+  // Sections follow category sort_order (Downlights, Spotlights, …).
+  // Within each section, families are alphabetical by name — never sort_order
+  // or insertion order.
   const categoryOrder = new Map(categories.map((c, i) => [c.id, i]));
   const catRank = (id: string | null | undefined) =>
     id != null && categoryOrder.has(id) ? categoryOrder.get(id)! : Number.MAX_SAFE_INTEGER;
@@ -91,15 +92,10 @@ export default async function ProductsPage({ searchParams }: ProductsPageProps) 
     const ca = catRank(a.category_id);
     const cb = catRank(b.category_id);
     if (ca !== cb) return ca - cb;
-    const sa = a.sort_order ?? 0;
-    const sb = b.sort_order ?? 0;
-    if (sa !== sb) return sa - sb;
-    return a.name.localeCompare(b.name);
+    return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' });
   });
 
-  // Group the (already ordered) products by category so the grid renders in
-  // subtle sections: Downlights, then a gap, then Spotlights, and so on —
-  // always following product_categories.sort_order.
+  // Group by category (section order); items inside each group are already A–Z.
   const productGroups: { key: string; name: string | null; products: Product[] }[] = [];
   for (const cat of categories) {
     const items = displayProducts.filter((p) => p.category_id === cat.id);

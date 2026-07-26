@@ -79,6 +79,15 @@ export function mountingType(montaje: string): string | null {
   return MOUNTING_MAP[m] ?? null;
 }
 
+/** Profile type codes (SUR/REC/PEN…) → Luken mounting_type when Mounting field is empty. */
+const PROFILE_MOUNTING_MAP: Record<string, string> = {
+  SUR: 'surface',
+  REC: 'recessed',
+  PEN: 'pendant',
+  COR: 'surface',
+  TRL: 'recessed',
+};
+
 function numOrNull(v: string): number | null {
   const t = (v ?? '').trim();
   if (!t) return null;
@@ -173,9 +182,10 @@ export function specSheetToVariantFields(data: SpecSheetData, environment: strin
   if (weight != null) dims.weight_kg = weight;
 
   return {
-    name: data.name || data.productName,
-    code: data.code || r.shortCode,
-    short_description: data.codeDescription || r.shortDesc,
+    // Prefer live SKU build so a stale sheet identity never wins.
+    name: [data.productName.trim(), r.nameBody].filter(Boolean).join(' ') || data.name || data.productName,
+    code: r.shortCode || data.code,
+    short_description: r.shortDesc || data.codeDescription,
     long_description: data.description || r.longDesc,
     light_source: lightSource(data.sku),
     // The Builder Power (WT13 → 13W) IS the system wattage. A manual "System
@@ -196,7 +206,10 @@ export function specSheetToVariantFields(data: SpecSheetData, environment: strin
     ip_rating: data.ipRating.trim() || null,
     class: data.electricalClass.trim() || null,
     control_types: controlTypes(data.sku.ctrl),
-    mounting_type: mountingType(data.sku.mounting),
+    mounting_type:
+      mountingType(data.sku.mounting) ||
+      PROFILE_MOUNTING_MAP[(data.sku.profile || '').trim()] ||
+      null,
     environment,
     dimensions: Object.keys(dims).length ? dims : null,
   };

@@ -33,7 +33,17 @@ function groupVariants(variants: ProductVariant[]): { name: string; items: Produ
   }
   return [...map.entries()]
     .sort((a, b) => a[1].sort - b[1].sort)
-    .map(([name, { items }]) => ({ name, items }));
+    .map(([name, { items }]) => ({
+      name,
+      // Within each type section: A–Z by code (not insertion order).
+      items: [...items].sort((a, b) =>
+        (a.full_code || a.code || a.name || '').localeCompare(
+          b.full_code || b.code || b.name || '',
+          undefined,
+          { sensitivity: 'base' }
+        )
+      ),
+    }));
 }
 
 export function VariantsTable({ variants, productSlug }: VariantsTableProps) {

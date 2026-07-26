@@ -16,7 +16,13 @@ import { saveVariantBuilder, updateVariant } from '@/app/(admin)/admin/variants/
 import { uploadSpecSheetPdfFromPreview } from '@/lib/specsheet/uploadSpecSheetPdf';
 import { toast } from '@/components/ui/Toast';
 import type { ProductVariant, ProductCategory, Product, ProductAsset, AppSettings } from '@/lib/types';
-import { applyFamilyName, deriveSeries, type SpecSheetData } from '@/lib/sku/specSheet';
+import {
+  applyFamilyName,
+  deriveSeries,
+  syncIdentityFromSku,
+  type SpecSheetData,
+} from '@/lib/sku/specSheet';
+import { AdminSelect } from '@/components/ui/AdminSelect';
 
 type Tab = 'builder' | 'product' | 'files' | 'preview';
 
@@ -53,6 +59,8 @@ export function VariantEditTabs({
   const [environment, setEnvironment] = useState(variant.environment || '');
 
   const product = products.find((p) => p.id === productId);
+  // Live from Builder — never show the stale DB code while editing.
+  const liveCode = (data.code || buildSku(data.sku).shortCode || variant.code || '').trim();
   const viewHref = product?.slug ? `/products/${product.slug}/${variant.slug}` : '#';
 
   // Keep sheet productName + SKU series aligned with the selected family even when
@@ -66,8 +74,8 @@ export function VariantEditTabs({
     });
   }, [productId, product]);
 
-  async function syncDatasheetPdf(okMessage: string) {
-    const code = (data.code || buildSku(data.sku).shortCode || variant.code || '').trim();
+  async function syncDatasheetPdf(okMessage: string, sheet: SpecSheetData = data) {
+    const code = (sheet.code || buildSku(sheet.sku).shortCode || variant.code || '').trim();
     // Give React a tick so lastUpdate / identity fields are painted on the Preview.
     await new Promise((r) => setTimeout(r, 80));
     try {
@@ -86,7 +94,10 @@ export function VariantEditTabs({
 
   async function handleSaveBuilder() {
     setSaving(true);
-    const result = await saveVariantBuilder(variant.id, data, {
+    // Force identity from current SKU before persist + PDF (no stale previous code).
+    const synced = syncIdentityFromSku(data);
+    setData(synced);
+    const result = await saveVariantBuilder(variant.id, synced, {
       product_id: productId || null,
       category_id: categoryId || null,
       environment: environment || null,
@@ -99,7 +110,7 @@ export function VariantEditTabs({
     if (result.lastUpdate) {
       setData((prev) => ({ ...prev, lastUpdate: result.lastUpdate! }));
     }
-    await syncDatasheetPdf('Builder saved · Spec Sheet PDF updated.');
+    await syncDatasheetPdf('Builder saved · Spec Sheet PDF updated.', synced);
     router.refresh();
     setSaving(false);
   }
@@ -111,7 +122,9 @@ export function VariantEditTabs({
   async function handleSaveProduct() {
     setSaving(true);
 
-    const identity = await saveVariantBuilder(variant.id, data, {
+    const synced = syncIdentityFromSku(data);
+    setData(synced);
+    const identity = await saveVariantBuilder(variant.id, synced, {
       product_id: productId || null,
       category_id: categoryId || null,
       environment: environment || null,
@@ -135,7 +148,7 @@ export function VariantEditTabs({
       }
     }
 
-    await syncDatasheetPdf('Product saved · Spec Sheet PDF updated.');
+    await syncDatasheetPdf('Product saved · Spec Sheet PDF updated.', synced);
     router.refresh();
     setSaving(false);
   }
@@ -143,7 +156,7 @@ export function VariantEditTabs({
   function handlePrint() {
     setTab('preview');
     // Chrome's "Save as PDF" uses document.title as the default filename.
-    const code = (data.code || buildSku(data.sku).shortCode || variant.code || '').trim();
+    const code = liveCode;
     const fileName = code ? `Luken Lighting - ${code}` : 'Luken Lighting - Spec Sheet';
     // Wait for the preview tab to render before invoking the print engine.
     setTimeout(() => {
@@ -168,7 +181,7 @@ export function VariantEditTabs({
               <ArrowLeft className="w-4 h-4 mr-1" />
               Back to Variants
             </Link>
-            <h1 className="text-3xl font-light tracking-widest uppercase">{variant.code}</h1>
+            <h1 className="text-3xl font-light tracking-widest uppercase">{liveCode || '—'}</h1>
           </div>
           <div className="flex items-center gap-3">
             {tab === 'builder' && (
@@ -226,50 +239,44 @@ export function VariantEditTabs({
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className={labelCls}>Product (family)</label>
-              <select
-                className={fieldCls}
+              <AdminSelect
+                aria-label="Product family"
                 value={productId}
-                onChange={(e) => {
-                  const id = e.target.value;
+                placeholder="— None —"
+                onChange={(id) => {
                   setProductId(id);
                   const p = products.find((x) => x.id === id);
                   // Keep SKU series / productName in sync with the family (Prueba → PRU).
                   // Otherwise only product_id changes and Re-apply keeps the old ORI prefix.
                   if (p) setData((prev) => applyFamilyName(prev, p.name));
                 }}
-              >
-                <option value="">— None —</option>
-                {products.map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
+                options={products.map((p) => ({ value: p.id, label: p.name }))}
+              />
             </div>
             <div>
               <label className={labelCls}>Category {productId ? '(inherited)' : ''}</label>
-              <select
-                className={fieldCls}
+              <AdminSelect
+                aria-label="Category"
                 value={productId ? product?.category_id || '' : categoryId}
-                onChange={(e) => setCategoryId(e.target.value)}
+                placeholder="— None —"
                 disabled={Boolean(productId)}
-              >
-                <option value="">— None —</option>
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
+                onChange={setCategoryId}
+                options={categories.map((c) => ({ value: c.id, label: c.name }))}
+              />
             </div>
             <div>
               <label className={labelCls}>Environment {productId ? '(inherited)' : ''}</label>
-              <select
-                className={fieldCls}
+              <AdminSelect
+                aria-label="Environment"
                 value={productId ? product?.environment || '' : environment}
-                onChange={(e) => setEnvironment(e.target.value)}
+                placeholder="— None —"
                 disabled={Boolean(productId)}
-              >
-                <option value="">— None —</option>
-                <option value="indoor">Indoor</option>
-                <option value="outdoor">Outdoor</option>
-              </select>
+                onChange={setEnvironment}
+                options={[
+                  { value: 'indoor', label: 'Indoor' },
+                  { value: 'outdoor', label: 'Outdoor' },
+                ]}
+              />
             </div>
           </div>
           <p className="mt-3 text-[11px] text-gray-500">

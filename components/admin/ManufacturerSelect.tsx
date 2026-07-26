@@ -10,6 +10,7 @@ import {
 } from '@/app/(admin)/admin/manufacturers/actions';
 import { confirmDialog } from '@/components/ui/ConfirmDialog';
 import { toast } from '@/components/ui/Toast';
+import { AdminSelect } from '@/components/ui/AdminSelect';
 import type { Manufacturer } from '@/lib/types';
 
 const CURRENCIES = ['USD', 'EUR', 'CNY', 'GBP', 'MXN', 'CAD', 'BRL', 'COP', 'JPY'];
@@ -133,21 +134,20 @@ export function ManufacturerSelect({ value, onChange, name }: Props) {
     <div>
       {name ? <input type="hidden" name={name} value={value} /> : null}
       <div className="flex items-center gap-2">
-        <select
-          className={selectClass}
+        <AdminSelect
+          aria-label="Manufacturer"
+          className="flex-1 min-w-0"
           value={selected ? value : ''}
-          onChange={(e) => onChange(e.target.value)}
-        >
-          <option value="">— Select manufacturer —</option>
-          {value && !selected && <option value={value}>{value} (not in list)</option>}
-          {list.map((m) => (
-            <option key={m.id} value={m.name}>
-              {m.name}
-              {m.country ? ` · ${m.country}` : ''}
-              {m.currency ? ` · ${m.currency}` : ''}
-            </option>
-          ))}
-        </select>
+          placeholder="— Select manufacturer —"
+          onChange={onChange}
+          options={[
+            ...(value && !selected ? [{ value, label: `${value} (not in list)` }] : []),
+            ...list.map((m) => ({
+              value: m.name,
+              label: `${m.name}${m.country ? ` · ${m.country}` : ''}${m.currency ? ` · ${m.currency}` : ''}`,
+            })),
+          ]}
+        />
         <button type="button" onClick={openCreate} className={iconBtn} title="Add new manufacturer">
           <Plus className="w-4 h-4" />
         </button>
@@ -197,12 +197,13 @@ export function ManufacturerSelect({ value, onChange, name }: Props) {
                 </div>
                 <div>
                   <label className={labelClass}>Currency</label>
-                  <select className={selectClass} value={fCurrency} onChange={(e) => setFCurrency(e.target.value)}>
-                    <option value="">—</option>
-                    {CURRENCIES.map((c) => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
-                  </select>
+                  <AdminSelect
+                    aria-label="Currency"
+                    value={fCurrency}
+                    onChange={setFCurrency}
+                    placeholder="— —"
+                    options={CURRENCIES.map((c) => ({ value: c, label: c }))}
+                  />
                 </div>
               </div>
             </div>

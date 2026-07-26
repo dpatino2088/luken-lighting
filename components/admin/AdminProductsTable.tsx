@@ -53,7 +53,10 @@ export function AdminProductsTable({ products, categories }: Props) {
       list = list.filter((p) => p.category_id === categoryFilter);
     }
 
-    return list;
+    // Always A–Z by family name (never sort_order / insertion order).
+    return [...list].sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+    );
   }, [products, search, categoryFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));

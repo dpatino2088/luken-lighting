@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { componentFromType, SUBCATEGORY_OPTIONS, type ConfigRow } from '@/lib/sku/specSheet';
+import { AdminSelect } from '@/components/ui/AdminSelect';
 
 const fieldClass =
   'w-full px-3 py-2.5 border border-gray-300 rounded-none bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent disabled:bg-gray-100 disabled:text-gray-500';
@@ -222,18 +223,13 @@ export function RelatedVariantsEditor({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 max-w-3xl">
         <div>
           <label className={labelClass}>Family</label>
-          <select
-            className={fieldClass}
+          <AdminSelect
+            aria-label="Family"
             value={familyId}
-            onChange={(e) => setFamilyId(e.target.value)}
-          >
-            <option value="">— choose family —</option>
-            {products.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
+            placeholder="— choose family —"
+            onChange={setFamilyId}
+            options={products.map((p) => ({ value: p.id, label: p.name }))}
+          />
         </div>
 
         <div className="flex flex-col justify-end">
@@ -290,22 +286,21 @@ export function RelatedVariantsEditor({
                       value={c.descripcion}
                       onChange={(e) => updateRow(i, { descripcion: e.target.value })}
                     />
-                    <select
-                      className={fieldClass}
+                    <AdminSelect
+                      aria-label="Type / Component"
                       value={c.componente}
-                      onChange={(e) => updateRow(i, { componente: e.target.value })}
-                    >
-                      <option value="">— Type / Component —</option>
-                      {c.componente &&
+                      placeholder="— Type / Component —"
+                      onChange={(v) => updateRow(i, { componente: v })}
+                      options={[
+                        ...(c.componente &&
                         !(COMPONENT_OPTIONS as readonly string[]).includes(
-                          c.componente as (typeof COMPONENT_OPTIONS)[number]
-                        ) && <option value={c.componente}>{c.componente}</option>}
-                      {COMPONENT_OPTIONS.map((opt) => (
-                        <option key={opt} value={opt}>
-                          {opt}
-                        </option>
-                      ))}
-                    </select>
+                          c.componente as (typeof COMPONENT_OPTIONS)[number],
+                        )
+                          ? [{ value: c.componente, label: c.componente }]
+                          : []),
+                        ...COMPONENT_OPTIONS.map((opt) => ({ value: opt, label: opt })),
+                      ]}
+                    />
                   </div>
                   <button
                     type="button"

@@ -19,9 +19,11 @@ export interface SkuState {
   dim: string;        // standard format code or 'CUSTOM'
   dimCustom: string;  // free text when dim === 'CUSTOM' (size, name, code fragment…)
   shape: string;
-  length: string;     // linear only (shape === 'L')
+  length: string;     // linear (shape === 'L'), track, or LED profile — e.g. 1000 / 2000 / 3000 mm
   track: string;      // track system — mutually exclusive with profile & Linear shape
-  profile: string;    // aluminum profile — mutually exclusive with track & Linear shape
+  /** DIFF = Diffuser, PRF = Profile — LED Profiles Type (replaces size/format). */
+  profileKind: string;
+  profile: string;    // aluminum profile style (SUR/REC/PEN…) — mutually exclusive with track & Linear shape
   mounting: string;   // mounting type label (e.g. "Recessed") — part of code + description
   /** Accessory kind when shape === 'ACC' (CLIP, ADAPT, CABLE… or CUSTOM). */
   accessoryType: string;
@@ -56,6 +58,7 @@ export const EMPTY_SKU_STATE: SkuState = {
   shape: '',
   length: '',
   track: '',
+  profileKind: '',
   profile: '',
   mounting: '',
   accessoryType: '',
@@ -102,6 +105,9 @@ export const T = {
     CH: 'Chrome',
     SN: 'Satin Nickel',
     GR: 'Gray',
+    ANZ: 'Anodized',
+    MF: 'Mill finish',
+    MET: 'Metal',
     'WH/BK': 'White trim / Black diffuser',
     'BK/WH': 'Black trim / White diffuser',
     'BZ/WH': 'Bronze trim / White diffuser',
@@ -285,6 +291,7 @@ export function enterAccessorySkuMode(state: SkuState): SkuState {
     dimCustom: '',
     length: '',
     track: '',
+    profileKind: '',
     profile: '',
     mounting: '',
     source: '',
@@ -340,6 +347,37 @@ export const TRACK_OPTIONS: SkuOption[] = [
   { value: '1PH', label: '1PH – Single-circuit track' },
   { value: '3PH', label: '3PH – Three-circuit track' },
   { value: 'LV', label: 'LV – Low-voltage track' },
+];
+
+const TRACK_LINE_VOLTAGE = new Set(['1PH', '3PH']);
+const TRACK_LOW_VOLTAGE = new Set(['MAG48', 'MAG24', 'LV']);
+
+/** Track codes allowed for Type = Track Line Voltage / Track Low Voltage. */
+export function trackOptionsForType(subcategory: string | null | undefined): SkuOption[] {
+  const s = (subcategory || '').trim().toLowerCase();
+  if (s === 'track line voltage') {
+    return TRACK_OPTIONS.filter((o) => TRACK_LINE_VOLTAGE.has(o.value));
+  }
+  if (s === 'track low voltage') {
+    return TRACK_OPTIONS.filter((o) => TRACK_LOW_VOLTAGE.has(o.value));
+  }
+  return TRACK_OPTIONS;
+}
+
+/** True when a stored track code does not belong to the current Type. */
+export function isTrackCodeAllowed(track: string, subcategory: string | null | undefined): boolean {
+  const code = (track || '').trim();
+  if (!code) return true;
+  const s = (subcategory || '').trim().toLowerCase();
+  if (s === 'track line voltage') return TRACK_LINE_VOLTAGE.has(code);
+  if (s === 'track low voltage') return TRACK_LOW_VOLTAGE.has(code);
+  return true;
+}
+
+/** Diffuser vs extrusion — used when Type = LED Profiles (SKU flag DIFF / PRF). */
+export const PROFILE_KIND_OPTIONS: SkuOption[] = [
+  { value: 'DIFF', label: 'DIFF – Diffuser' },
+  { value: 'PRF', label: 'PRF – Profile' },
 ];
 
 export const PROFILE_OPTIONS: SkuOption[] = [
@@ -403,6 +441,9 @@ export const COLOR_OPTIONS: SkuOption[] = [
   { value: 'CH', label: 'CH – Chrome', group: 'Single color' },
   { value: 'SN', label: 'SN – Satin Nickel', group: 'Single color' },
   { value: 'GR', label: 'GR – Gray', group: 'Single color' },
+  { value: 'ANZ', label: 'ANZ – Anodizado', group: 'Metallic / raw' },
+  { value: 'MF', label: 'MF – Mill finish', group: 'Metallic / raw' },
+  { value: 'MET', label: 'MET – Metal', group: 'Metallic / raw' },
   { value: 'WH/BK', label: 'WH/BK – White trim · Black diffuser', group: 'Two-tone (Trim / Diffuser)' },
   { value: 'BK/WH', label: 'BK/WH – Black trim · White diffuser', group: 'Two-tone (Trim / Diffuser)' },
   { value: 'BZ/WH', label: 'BZ/WH – Bronze trim · White diffuser', group: 'Two-tone (Trim / Diffuser)' },
@@ -635,6 +676,8 @@ export function buildSku(state: SkuState): SkuResult {
   add(series, true, null);
 
   // 2 · Size + shape
+  const track = state.track.trim();
+  const profile = state.profile.trim();
   let dimSeg = dimRaw;
   if (dimSeg && shape) dimSeg += shape;
   let dimDesc: string | null = dimRaw ? dimRaw : null;
@@ -642,24 +685,29 @@ export function buildSku(state: SkuState): SkuResult {
   if (length && shape === 'L' && dimDesc) dimDesc += ' ' + length + 'mm';
   add(dimSeg, true, dimDesc, true);
 
-  // 3 · Length (linear only — already merged into dimDesc)
-  if (shape === 'L' && length) add(length, true, null, true);
-
-  // 3b · Track / Profile — mutually exclusive linear systems. The type flag
-  // (TRK / PRF) is part of the SKU code; the specific system is the description.
-  const track = state.track.trim();
-  const profile = state.profile.trim();
+  // 3 · Track / Profile — mutually exclusive linear systems.
+  // Order matches configurator: SERIES-TRK|{DIFF|PRF}-{length}-…
+  const profileKind = (state.profileKind || '').trim() || (profile ? 'PRF' : '');
   if (track) {
     add('TRK', true, translate('track', track), true);
-  } else if (profile) {
-    add('PRF', true, translate('profile', profile), true);
+    if (length) add(length, true, `${length}mm`, true);
+  } else if (profileKind) {
+    // SERIES-PRF|DIFF-{length}-{SUR|REC|PEN|…}-…
+    add(profileKind, true, profileKind === 'DIFF' ? 'Diffuser' : 'Profile', true);
+    if (length) add(length, true, `${length}mm`, true);
+    if (profile) add(profile, true, translate('profile', profile), true);
   }
+
+  // 3b · Length for linear fixtures only (shape L). Track/profile length is above.
+  if (!track && !profileKind && shape === 'L' && length) add(length, true, null, true);
 
   // 3c · Mounting type — part of the SKU code and the description. The state
   // stores the human label (e.g. "Recessed"); the code comes from MOUNTING_CODE
   // (unknown labels fall back to a sanitized 3-letter code).
+  // LED Profiles: Mounting field is hidden — mount style comes only from
+  // Profile type (SUR/REC/PEN…). Never emit a leftover Mounting segment.
   const mounting = state.mounting.trim();
-  if (mounting) {
+  if (mounting && !profileKind) {
     const mCode =
       MOUNTING_CODE[mounting] ?? mounting.replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase();
     if (mCode) add(mCode, true, mounting);

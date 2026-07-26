@@ -1,6 +1,11 @@
 'use client';
 
-import { primaryLumen, type SpecSheetData, type TechRow } from '@/lib/sku/specSheet';
+import {
+  deriveIdentity,
+  primaryLumen,
+  type SpecSheetData,
+  type TechRow,
+} from '@/lib/sku/specSheet';
 import { buildSku, skuColorName, skuDriverControlText, skuTrackName, skuProfileName, cctKelvinFromCustom } from '@/lib/sku/skuRules';
 import { cctRange, criValue, beamValue, wattsValue } from '@/lib/sku/mapToLuken';
 import type { ProductAsset } from '@/lib/types';
@@ -27,10 +32,24 @@ export function SheetPreview({
   familyOverview?: string | null;
 }) {
   const r = buildSku(data.sku);
-  const title = data.name || data.productName;
-  const code = data.code || r.shortCode;
+  // Always derive from current SKU so Preview never shows a previous configuration.
+  const identity = deriveIdentity(data);
+  const title = identity.name || data.productName;
+  const code = identity.code || r.shortCode;
+  const codeDescription = identity.codeDescription;
+  const description = identity.description;
   const colorName = skuColorName(data.sku.color);
   const driverControl = skuDriverControlText(data.sku);
+  const profileKindLabel =
+    data.sku.profileKind === 'DIFF' ? 'Diffuser' : data.sku.profileKind === 'PRF' ? 'Profile' : '';
+  const mountingLabel =
+    data.sku.mounting ||
+    (data.sku.profile
+      ? ({ SUR: 'Surface mounted', REC: 'Recessed', PEN: 'Suspended / Pendant', COR: 'Corner', TRL: 'Trimless' } as Record<
+          string,
+          string
+        >)[data.sku.profile] || data.sku.profile
+      : '');
 
   // Images are managed exclusively in product_assets (File & Assets tab). We do
   // NOT fall back to legacy inline URLs (data.photoUrl / data.diagramUrl) so that
@@ -65,11 +84,13 @@ export function SheetPreview({
   const generalRows = [
     { label: 'Dimensions', value: dims ? `${dims} mm` : '' },
     { label: 'Weight', value: data.peso ? `${data.peso} kg` : '' },
+    { label: 'Length', value: data.sku.length ? `${data.sku.length} mm` : '' },
     { label: 'Lumen', value: lumen ? `${lumen.value} ${lumen.unit}` : '' },
     { label: 'Track', value: skuTrackName(data.sku.track) },
+    { label: 'Type', value: profileKindLabel },
     { label: 'Profile', value: skuProfileName(data.sku.profile) },
     { label: 'Color', value: colorName },
-    { label: 'Mounting', value: data.sku.mounting },
+    { label: 'Mounting', value: mountingLabel },
     { label: 'Material', value: data.material },
     { label: 'IP rating', value: data.ipRating },
     { label: 'Electrical class', value: data.electricalClass },
@@ -195,7 +216,7 @@ export function SheetPreview({
         {/* Name box (the SKU code itself lives in the black CODE bar above) */}
         <div className="bg-gray-50 border border-gray-200 p-3">
           <div className="text-sm font-medium text-gray-900">{title || <Placeholder>—</Placeholder>}</div>
-          <div className="text-gray-600">{data.codeDescription || <Placeholder>—</Placeholder>}</div>
+          <div className="text-gray-600">{codeDescription || <Placeholder>—</Placeholder>}</div>
         </div>
 
         {/* Description */}
@@ -203,7 +224,7 @@ export function SheetPreview({
           <h2 className="text-[10px] font-semibold uppercase tracking-widest text-gray-500 border-b border-gray-300 pb-1 mb-2">
             Description
           </h2>
-          <p>{data.description || <Placeholder>—</Placeholder>}</p>
+          <p>{description || <Placeholder>—</Placeholder>}</p>
         </section>
 
         {/* Related variants (hidden when there are none) */}

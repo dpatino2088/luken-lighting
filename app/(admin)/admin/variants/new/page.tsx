@@ -18,6 +18,7 @@ import { buildSku } from '@/lib/sku/skuRules';
 import { specSheetToVariantFields, cctRange } from '@/lib/sku/mapToLuken';
 import { getSettings } from '@/app/(admin)/admin/settings/actions';
 import { toast } from '@/components/ui/Toast';
+import { AdminSelect } from '@/components/ui/AdminSelect';
 
 interface SimpleCategory { id: string; name: string; }
 interface SimpleProduct { id: string; name: string; category_id: string | null; environment: 'indoor' | 'outdoor' | null; description: string | null; }
@@ -60,7 +61,7 @@ export default function NewVariantPage() {
     if (!supabase) return;
     Promise.all([
       supabase.from('product_categories').select('id, name').order('sort_order'),
-      supabase.from('products').select('id, name, category_id, environment, description').order('sort_order'),
+      supabase.from('products').select('id, name, category_id, environment, description').order('name'),
     ]).then(([catRes, prodRes]) => {
       setCategories(catRes.data ?? []);
       setProducts(prodRes.data ?? []);
@@ -219,39 +220,38 @@ export default function NewVariantPage() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className={labelClass}>Product (family)</label>
-              <select className={fieldClass} value={selectedProductId} onChange={(e) => setSelectedProductId(e.target.value)}>
-                <option value="">— None —</option>
-                {products.map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
+              <AdminSelect
+                aria-label="Product family"
+                value={selectedProductId}
+                placeholder="— None —"
+                onChange={setSelectedProductId}
+                options={products.map((p) => ({ value: p.id, label: p.name }))}
+              />
             </div>
             <div>
               <label className={labelClass}>Category {selectedProductId ? '(inherited)' : ''}</label>
-              <select
-                className={fieldClass}
+              <AdminSelect
+                aria-label="Category"
                 value={selectedProductId ? selectedProduct?.category_id || '' : categoryId}
-                onChange={(e) => setCategoryId(e.target.value)}
+                placeholder="— None —"
                 disabled={Boolean(selectedProductId)}
-              >
-                <option value="">— None —</option>
-                {categories.map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
-                ))}
-              </select>
+                onChange={setCategoryId}
+                options={categories.map((c) => ({ value: c.id, label: c.name }))}
+              />
             </div>
             <div>
               <label className={labelClass}>Environment {selectedProductId ? '(inherited)' : ''}</label>
-              <select
-                className={fieldClass}
+              <AdminSelect
+                aria-label="Environment"
                 value={selectedProductId ? selectedProduct?.environment || '' : environment}
-                onChange={(e) => setEnvironment(e.target.value)}
+                placeholder="— None —"
                 disabled={Boolean(selectedProductId)}
-              >
-                <option value="">— None —</option>
-                <option value="indoor">Indoor</option>
-                <option value="outdoor">Outdoor</option>
-              </select>
+                onChange={setEnvironment}
+                options={[
+                  { value: 'indoor', label: 'Indoor' },
+                  { value: 'outdoor', label: 'Outdoor' },
+                ]}
+              />
             </div>
           </div>
         </div>

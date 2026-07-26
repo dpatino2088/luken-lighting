@@ -106,7 +106,10 @@ export function AdminVariantsTable({ variants, categories, products }: Props) {
       const ra = rank(a);
       const rb = rank(b);
       if (ra !== rb) return ra - rb;
-      return (a.name || a.code || '').localeCompare(b.name || b.code || '');
+      // Alphabetical by SKU code (fallback name) — not created_at / insertion order.
+      return (a.code || a.name || '').localeCompare(b.code || b.name || '', undefined, {
+        sensitivity: 'base',
+      });
     });
   }, [filtered, categoryRank]);
 

@@ -7,7 +7,7 @@ import {
   DIM_OPTIONS,
   SHAPE_OPTIONS,
   ACCESSORY_TYPE_OPTIONS,
-  TRACK_OPTIONS,
+  PROFILE_KIND_OPTIONS,
   PROFILE_OPTIONS,
   SOURCE_OPTIONS,
   SOCKET_OPTIONS,
@@ -21,27 +21,15 @@ import {
   DRIVER_V_OPTIONS,
   CTRL_OPTIONS,
   VERSION_OPTIONS,
+  trackOptionsForType,
 } from '@/lib/sku/skuRules';
 import { MONTAJE_OPTIONS } from '@/lib/sku/specSheet';
+import { AdminSelect } from '@/components/ui/AdminSelect';
 
 const selectClass =
   'w-full px-3 py-2 border border-gray-300 rounded-none bg-white text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-gray-900 focus:border-transparent';
 const inputClass = selectClass;
 const labelClass = 'block text-xs font-medium uppercase tracking-wide text-gray-500 mb-1.5';
-
-function groupOptions(options: SkuOption[]): { group: string | null; items: SkuOption[] }[] {
-  const out: { group: string | null; items: SkuOption[] }[] = [];
-  for (const opt of options) {
-    const g = opt.group ?? null;
-    let bucket = out.find((b) => b.group === g);
-    if (!bucket) {
-      bucket = { group: g, items: [] };
-      out.push(bucket);
-    }
-    bucket.items.push(opt);
-  }
-  return out;
-}
 
 function SkuSelect({
   label,
@@ -56,30 +44,20 @@ function SkuSelect({
   options: SkuOption[];
   placeholder?: string;
 }) {
-  const grouped = groupOptions(options);
   return (
     <div>
       <label className={labelClass}>{label}</label>
-      <select value={value} onChange={(e) => onChange(e.target.value)} className={selectClass}>
-        <option value="">{placeholder}</option>
-        {grouped.map((b, i) =>
-          b.group ? (
-            <optgroup key={i} label={b.group}>
-              {b.items.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </optgroup>
-          ) : (
-            b.items.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))
-          ),
-        )}
-      </select>
+      <AdminSelect
+        aria-label={label}
+        value={value}
+        onChange={onChange}
+        placeholder={placeholder}
+        options={options.map((o) => ({
+          value: o.value,
+          label: o.label,
+          group: o.group ?? null,
+        }))}
+      />
     </div>
   );
 }
@@ -96,6 +74,58 @@ function Section({ title, hint, children }: { title: string; hint?: string; chil
   );
 }
 
+function MountingSelect({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  return (
+    <div>
+      <label className={labelClass}>Mounting type</label>
+      <AdminSelect
+        aria-label="Mounting type"
+        value={value}
+        onChange={onChange}
+        options={[
+          // Keep legacy value visible if still stored on the sheet.
+          ...(value && !(MONTAJE_OPTIONS as readonly string[]).includes(value)
+            ? [{ value, label: `${value} (legacy)` }]
+            : []),
+          ...MONTAJE_OPTIONS.map((m) => ({ value: m, label: m })),
+        ]}
+      />
+    </div>
+  );
+}
+
+function ColorAndVersion({
+  state,
+  set,
+}: {
+  state: SkuState;
+  set: (patch: Partial<SkuState>) => void;
+}) {
+  return (
+    <>
+      <SkuSelect label="Color / finish" value={state.color} onChange={(v) => set({ color: v })} options={COLOR_OPTIONS} />
+      <SkuSelect label="Version" value={state.version} onChange={(v) => set({ version: v })} options={VERSION_OPTIONS} />
+      {state.version === 'CUSTOM' && (
+        <div>
+          <label className={labelClass}>Custom version</label>
+          <input
+            className={inputClass}
+            value={state.versionCustom}
+            onChange={(e) => set({ versionCustom: e.target.value })}
+            placeholder="e.g. V5, Rev A"
+          />
+        </div>
+      )}
+    </>
+  );
+}
+
 export function SkuFields({
   state,
   onChange,
@@ -103,26 +133,62 @@ export function SkuFields({
   onLumenChange,
   /** Driven by Type = Accessories (not by Shape). */
   accessoryMode = false,
+  /** Driven by Type = Track Line Voltage / Track Low Voltage. */
+  trackMode = false,
+  /** Driven by Type = LED Profiles. */
+  profileMode = false,
+  /** Current Type (subcategory) — filters track codes by voltage class. */
+  subcategory = '',
 }: {
   state: SkuState;
   onChange: (s: SkuState) => void;
   lumen?: string;
   onLumenChange?: (v: string) => void;
   accessoryMode?: boolean;
+  trackMode?: boolean;
+  profileMode?: boolean;
+  subcategory?: string;
 }) {
   const set = (patch: Partial<SkuState>) => onChange({ ...state, ...patch });
   const r = buildSku(state);
 
-  // Track / Profile / Linear shape are mutually exclusive.
   const chooseTrack = (v: string) =>
-    set(v ? { track: v, profile: '', shape: state.shape === 'L' ? '' : state.shape, length: '' } : { track: '' });
+    set(
+      v
+        ? { track: v, profile: '', profileKind: '', shape: state.shape === 'L' ? '' : state.shape }
+        : { track: '' }
+    );
+  const chooseProfileKind = (v: string) =>
+    set(
+      v
+        ? {
+            profileKind: v,
+            track: '',
+            mounting: '', // Profiles use Profile type, not Mounting
+            shape: state.shape === 'L' ? '' : state.shape,
+          }
+        : { profileKind: '' }
+    );
   const chooseProfile = (v: string) =>
-    set(v ? { profile: v, track: '', shape: state.shape === 'L' ? '' : state.shape, length: '' } : { profile: '' });
+    set(
+      v
+        ? { profile: v, track: '', mounting: '', shape: state.shape === 'L' ? '' : state.shape }
+        : { profile: '' }
+    );
   const chooseShape = (v: string) =>
-    set(v === 'L' ? { shape: v, track: '', profile: '' } : { shape: v });
+    set(v === 'L' ? { shape: v, track: '', profile: '', profileKind: '' } : { shape: v });
 
   // Shape dropdown is geometry only (R/S/L/RT). Never show ACC here.
   const shapeValue = state.shape === 'ACC' ? '' : state.shape;
+  const trackOptions = trackOptionsForType(subcategory);
+
+  const identityHint = accessoryMode
+    ? 'Type Accessories → SKU is SERIES-ACC-TYPE-…'
+    : trackMode
+      ? 'Type Track → track system identity (no fixture photometrics)'
+      : profileMode
+        ? 'Type LED Profiles → Diffuser or Profile + length (like Track)'
+        : undefined;
 
   return (
     <div className="space-y-8">
@@ -137,10 +203,7 @@ export function SkuFields({
         </div>
       </div>
 
-      <Section
-        title="Identity & format"
-        hint={accessoryMode ? 'Type Accessories → SKU is SERIES-ACC-TYPE-…' : undefined}
-      >
+      <Section title="Identity & format" hint={identityHint}>
         <div>
           <label className={labelClass}>Series (required)</label>
           <input
@@ -173,26 +236,67 @@ export function SkuFields({
                 />
               </div>
             )}
-            <SkuSelect label="Color / finish" value={state.color} onChange={(v) => set({ color: v })} options={COLOR_OPTIONS} />
-            <SkuSelect label="Version" value={state.version} onChange={(v) => set({ version: v })} options={VERSION_OPTIONS} />
-            {state.version === 'CUSTOM' && (
-              <div>
-                <label className={labelClass}>Custom version</label>
-                <input
-                  className={inputClass}
-                  value={state.versionCustom}
-                  onChange={(e) => set({ versionCustom: e.target.value })}
-                  placeholder="e.g. V5, Rev A"
-                />
-              </div>
-            )}
+            <ColorAndVersion state={state} set={set} />
+          </>
+        ) : trackMode ? (
+          <>
+            <SkuSelect
+              label="Track system"
+              value={state.track}
+              onChange={chooseTrack}
+              options={trackOptions}
+              placeholder="— choose —"
+            />
+            <div>
+              <label className={labelClass}>Length (mm)</label>
+              <input
+                className={inputClass}
+                value={state.length}
+                onChange={(e) => set({ length: e.target.value.replace(/[^0-9]/g, '') })}
+                placeholder="e.g. 1000, 2000, 3000"
+              />
+              <p className="mt-1 text-[11px] text-gray-400">Same as linear: 1000 = 1 m, 2000 = 2 m, …</p>
+            </div>
+            <MountingSelect value={state.mounting} onChange={(v) => set({ mounting: v })} />
+            <SkuSelect label="Trim" value={state.trim} onChange={(v) => set({ trim: v })} options={TRIM_OPTIONS} />
+            <ColorAndVersion state={state} set={set} />
+          </>
+        ) : profileMode ? (
+          <>
+            <SkuSelect
+              label="Diffuser / Profile"
+              value={state.profileKind}
+              onChange={chooseProfileKind}
+              options={PROFILE_KIND_OPTIONS}
+              placeholder="— choose —"
+            />
+            <div>
+              <label className={labelClass}>Length (mm)</label>
+              <input
+                className={inputClass}
+                value={state.length}
+                onChange={(e) => set({ length: e.target.value.replace(/[^0-9]/g, '') })}
+                placeholder="e.g. 1000, 2000, 3000"
+              />
+              <p className="mt-1 text-[11px] text-gray-400">Same as track: 1000 = 1 m, 2000 = 2 m, …</p>
+            </div>
+            <SkuSelect
+              label="Profile type"
+              value={state.profile}
+              onChange={chooseProfile}
+              options={PROFILE_OPTIONS}
+              placeholder="— choose —"
+            />
+            {/* Mounting is represented by Profile type (SUR/REC/PEN…) in the SKU. */}
+            <SkuSelect label="Trim" value={state.trim} onChange={(v) => set({ trim: v })} options={TRIM_OPTIONS} />
+            <ColorAndVersion state={state} set={set} />
           </>
         ) : (
           <>
             <SkuSelect label="Size / format" value={state.dim} onChange={(v) => set({ dim: v })} options={DIM_OPTIONS} />
             {state.dim === 'CUSTOM' && (
               <div>
-                <label className={labelClass}>Custom Text</label>
+                <label className={labelClass}>Custom text</label>
                 <input
                   className={inputClass}
                   value={state.dimCustom}
@@ -208,34 +312,13 @@ export function SkuFields({
                 <input className={inputClass} value={state.length} onChange={(e) => set({ length: e.target.value })} placeholder="e.g. 1200" />
               </div>
             )}
-            <SkuSelect
-              label={`Track${state.profile ? ' (clears profile)' : ''}`}
-              value={state.track}
-              onChange={chooseTrack}
-              options={TRACK_OPTIONS}
-              placeholder="— none —"
-            />
-            <SkuSelect
-              label={`Profile${state.track ? ' (clears track)' : ''}`}
-              value={state.profile}
-              onChange={chooseProfile}
-              options={PROFILE_OPTIONS}
-              placeholder="— none —"
-            />
-            <div>
-              <label className={labelClass}>Mounting type</label>
-              <select className={selectClass} value={state.mounting} onChange={(e) => set({ mounting: e.target.value })}>
-                <option value="">— choose —</option>
-                {MONTAJE_OPTIONS.map((m) => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </select>
-            </div>
+            <MountingSelect value={state.mounting} onChange={(v) => set({ mounting: v })} />
           </>
         )}
       </Section>
 
-      {!accessoryMode && (
+      {/* Fixtures only: light source / quality. Track & LED Profiles: electrical only. */}
+      {!accessoryMode && !trackMode && !profileMode && (
         <>
           <Section title="Light source">
             <SkuSelect label="Source (required)" value={state.source} onChange={(v) => set({ source: v })} options={SOURCE_OPTIONS} />
@@ -294,31 +377,46 @@ export function SkuFields({
               </div>
             )}
           </Section>
-
-          <Section title="Electrical & control">
-            <SkuSelect label="Driver" value={state.driver} onChange={(v) => set({ driver: v })} options={DRIVER_OPTIONS} />
-            <SkuSelect label="Voltage / current" value={state.driverV} onChange={(v) => set({ driverV: v })} options={DRIVER_V_OPTIONS} />
-            {state.driverV === 'CUSTOM' && (
-              <div>
-                <label className={labelClass}>Custom voltage / current</label>
-                <input className={inputClass} value={state.driverVCustom} onChange={(e) => set({ driverVCustom: e.target.value })} placeholder="e.g. 48V DC, 1400mA" />
-              </div>
-            )}
-            <SkuSelect label="Dimming / control" value={state.ctrl} onChange={(v) => set({ ctrl: v })} options={CTRL_OPTIONS} />
-            <SkuSelect label="Version" value={state.version} onChange={(v) => set({ version: v })} options={VERSION_OPTIONS} />
-            {state.version === 'CUSTOM' && (
-              <div>
-                <label className={labelClass}>Custom version</label>
-                <input
-                  className={inputClass}
-                  value={state.versionCustom}
-                  onChange={(e) => set({ versionCustom: e.target.value })}
-                  placeholder="e.g. V5, Rev A"
-                />
-              </div>
-            )}
-          </Section>
         </>
+      )}
+
+      {!accessoryMode && (
+        <Section
+          title="Electrical & control"
+          hint={
+            trackMode
+              ? 'Voltage / control for the track system'
+              : profileMode
+                ? 'Voltage / control for the profile / diffuser'
+                : undefined
+          }
+        >
+          <SkuSelect label="Driver" value={state.driver} onChange={(v) => set({ driver: v })} options={DRIVER_OPTIONS} />
+          <SkuSelect label="Voltage / current" value={state.driverV} onChange={(v) => set({ driverV: v })} options={DRIVER_V_OPTIONS} />
+          {state.driverV === 'CUSTOM' && (
+            <div>
+              <label className={labelClass}>Custom voltage / current</label>
+              <input className={inputClass} value={state.driverVCustom} onChange={(e) => set({ driverVCustom: e.target.value })} placeholder="e.g. 48V DC, 1400mA" />
+            </div>
+          )}
+          <SkuSelect label="Dimming / control" value={state.ctrl} onChange={(v) => set({ ctrl: v })} options={CTRL_OPTIONS} />
+          {!trackMode && !profileMode && (
+            <>
+              <SkuSelect label="Version" value={state.version} onChange={(v) => set({ version: v })} options={VERSION_OPTIONS} />
+              {state.version === 'CUSTOM' && (
+                <div>
+                  <label className={labelClass}>Custom version</label>
+                  <input
+                    className={inputClass}
+                    value={state.versionCustom}
+                    onChange={(e) => set({ versionCustom: e.target.value })}
+                    placeholder="e.g. V5, Rev A"
+                  />
+                </div>
+              )}
+            </>
+          )}
+        </Section>
       )}
     </div>
   );

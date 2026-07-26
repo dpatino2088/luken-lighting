@@ -29,9 +29,9 @@ export default async function AdminVariantsPage() {
     supabase
       .from('product_variants')
       .select(`*, category:product_categories(id, name), product:products(id, name, slug), assets:product_assets(id, file_url, type, sort_order, created_at)`)
-      .order('created_at', { ascending: false }),
+      .order('code'),
     supabase.from('product_categories').select('id, name').order('sort_order'),
-    supabase.from('products').select('id, name').order('sort_order'),
+    supabase.from('products').select('id, name').order('name'),
   ]);
 
   const variants = variantsRes.data ?? [];

@@ -26,7 +26,7 @@ export default async function AdminProductsPage() {
   }
 
   const [productsRes, categoriesRes] = await Promise.all([
-    supabase.from('products').select('*').order('sort_order'),
+    supabase.from('products').select('*').order('name'),
     supabase.from('product_categories').select('*').order('sort_order'),
   ]);
 

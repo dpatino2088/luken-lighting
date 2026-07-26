@@ -8,12 +8,23 @@ import {
   DEFAULT_TECH_ROWS,
   SUBCATEGORY_OPTIONS,
   isAccessoriesType,
+  isTrackType,
+  isProfileType,
+  syncIdentityFromSku,
   type SpecSheetData,
   type TechRow,
 } from '@/lib/sku/specSheet';
-import { buildSku, cctKelvinFromCustom, enterAccessorySkuMode, leaveAccessorySkuMode } from '@/lib/sku/skuRules';
+import {
+  buildSku,
+  cctKelvinFromCustom,
+  enterAccessorySkuMode,
+  leaveAccessorySkuMode,
+  isTrackCodeAllowed,
+  type SkuState,
+} from '@/lib/sku/skuRules';
 import { cctRange, criValue, beamValue, wattsValue } from '@/lib/sku/mapToLuken';
 import type { SpecSheetSync } from '@/components/specsheet/useSpecSheetSync';
+import { AdminSelect } from '@/components/ui/AdminSelect';
 
 type SubTab = 'general' | 'config' | 'tech' | 'notes';
 const SUBTABS: { id: SubTab; label: string }[] = [
@@ -88,6 +99,8 @@ export function VariantBuilderPanel({
 
   const { setSku, relinkAll } = sync;
   const accessoryMode = isAccessoriesType(data.subcategory);
+  const trackMode = isTrackType(data.subcategory);
+  const profileMode = isProfileType(data.subcategory);
 
   // Type = Accessories owns accessory SKU mode (SERIES-ACC-…). Shape stays geometry-only.
   useEffect(() => {
@@ -110,14 +123,67 @@ export function VariantBuilderPanel({
   const set = <K extends keyof SpecSheetData>(key: K, value: SpecSheetData[K]) =>
     onChange((prev) => ({ ...prev, [key]: value }));
 
+  /** Clear fixture photometrics — tracks are not light engines. Keep trim (TRM/TRL). */
+  const clearPhotometrics = (sku: SkuState): SkuState => ({
+    ...sku,
+    source: '',
+    socket: '',
+    socketCustom: '',
+    cri: '',
+    criCustom: '',
+    cct: '',
+    cctCustom: '',
+    optic: '',
+    opticCustom: '',
+    watts: '',
+    wattsCustom: '',
+  });
+
   const setType = (subcategory: string) => {
     onChange((prev) => {
       const wasAcc = isAccessoriesType(prev.subcategory);
       const nowAcc = isAccessoriesType(subcategory);
+      const nowTrack = isTrackType(subcategory);
+      const nowProfile = isProfileType(subcategory);
       let sku = prev.sku;
+
       if (nowAcc && !wasAcc) sku = enterAccessorySkuMode(sku);
       else if (!nowAcc && wasAcc) sku = leaveAccessorySkuMode(sku);
-      return { ...prev, subcategory, sku };
+
+      if (nowTrack) {
+        sku = clearPhotometrics({
+          ...sku,
+          profile: '',
+          profileKind: '',
+          // Size / format and linear shape do not apply — length (mm) stays (1 m / 2 m / …).
+          dim: '',
+          dimCustom: '',
+          shape: sku.shape === 'L' ? '' : sku.shape,
+          track: isTrackCodeAllowed(sku.track, subcategory) ? sku.track : '',
+        });
+      } else if (nowProfile) {
+        sku = clearPhotometrics({
+          ...sku,
+          track: '',
+          dim: '',
+          dimCustom: '',
+          mounting: '', // Hidden in Profiles — Profile type owns SUR/REC/PEN in the SKU
+          shape: sku.shape === 'L' ? '' : sku.shape,
+          // Length stays (1 m / 2 m / …). Default kind to Profile if extrusion style already set.
+          profileKind: sku.profileKind || (sku.profile ? 'PRF' : ''),
+        });
+      } else if (!nowAcc) {
+        // Normal fixture: drop track/profile identity leftovers (keep length only if shape L).
+        sku = {
+          ...sku,
+          track: '',
+          profile: '',
+          profileKind: '',
+          length: sku.shape === 'L' ? sku.length : '',
+        };
+      }
+
+      return syncIdentityFromSku({ ...prev, subcategory, sku });
     });
   };
 
@@ -155,26 +221,26 @@ export function VariantBuilderPanel({
       };
     });
 
-  // Values the sheet auto-fills from the Builder (Light quality). Shown here as
-  // read-only rows so the Technical data tab is never blank/confusing and the
-  // user can see exactly what will appear on the ficha without retyping it.
+  // Values the sheet auto-fills from the Builder (Light quality / Power).
+  // Always show the four rows (filled or "—") so Technical data is never blank
+  // and the user can see what is still missing in General data.
   const derivedTech = useMemo(() => {
-    const rows: { campo: string; valor: string; unidad: string }[] = [];
     const cct = data.sku.cct === 'CUSTOM' ? cctKelvinFromCustom(data.sku.cctCustom) : cctRange(data.sku.cct);
-    if (cct.min != null) {
-      rows.push({
-        campo: 'Color temperature',
-        valor: cct.max != null && cct.max !== cct.min ? `${cct.min}–${cct.max}` : `${cct.min}`,
-        unidad: 'K',
-      });
-    }
+    const cctValor =
+      cct.min != null
+        ? cct.max != null && cct.max !== cct.min
+          ? `${cct.min}–${cct.max}`
+          : `${cct.min}`
+        : '—';
     const cri = criValue(data.sku.cri === 'CUSTOM' ? data.sku.criCustom : data.sku.cri);
-    if (cri != null) rows.push({ campo: 'CRI', valor: `${cri}+`, unidad: 'Ra' });
     const beam = beamValue(data.sku.optic === 'CUSTOM' ? data.sku.opticCustom : data.sku.optic);
-    if (beam != null) rows.push({ campo: 'Beam angle', valor: `${beam}`, unidad: '°' });
     const watts = wattsValue(data.sku.watts === 'CUSTOM' ? data.sku.wattsCustom : data.sku.watts);
-    if (watts != null) rows.push({ campo: 'System wattage', valor: `${watts}`, unidad: 'W' });
-    return rows;
+    return [
+      { campo: 'Color temperature', valor: cctValor, unidad: 'K' },
+      { campo: 'CRI', valor: cri != null ? `${cri}+` : '—', unidad: 'Ra' },
+      { campo: 'Beam angle', valor: beam != null ? `${beam}` : '—', unidad: '°' },
+      { campo: 'System wattage', valor: watts != null ? `${watts}` : '—', unidad: 'W' },
+    ];
   }, [data.sku]);
 
   // Manual rows shown in "Additional measured values", excluding any that are
@@ -198,21 +264,43 @@ export function VariantBuilderPanel({
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <label className={labelClass}>Type</label>
-            <select className={fieldClass} value={data.subcategory} onChange={(e) => setType(e.target.value)}>
-              <option value="">— choose —</option>
-              {data.subcategory && !SUBCATEGORY_OPTIONS.includes(data.subcategory as (typeof SUBCATEGORY_OPTIONS)[number]) && (
-                <option value={data.subcategory}>{data.subcategory}</option>
-              )}
-              {SUBCATEGORY_OPTIONS.map((s) => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
+            <AdminSelect
+              aria-label="Type"
+              value={data.subcategory}
+              onChange={setType}
+              placeholder="— choose —"
+              options={[
+                ...(data.subcategory &&
+                !SUBCATEGORY_OPTIONS.includes(data.subcategory as (typeof SUBCATEGORY_OPTIONS)[number])
+                  ? [{ value: data.subcategory, label: data.subcategory }]
+                  : []),
+                ...SUBCATEGORY_OPTIONS.map((s) => ({ value: s, label: s })),
+              ]}
+            />
           </div>
         </div>
         <p className="mt-3 text-[11px] text-gray-500">
-          {accessoryMode
-            ? <>Type <strong>Accessories</strong> unlocks accessory fields and builds SKUs like <span className="font-mono">ORI-ACC-CLIP-WH</span>.</>
-            : <>Groups, orders &amp; filters this code in the public <strong>Product Codes</strong> list. Choose <strong>Accessories</strong> for accessory SKUs.</>}
+          {accessoryMode ? (
+            <>
+              Type <strong>Accessories</strong> unlocks accessory fields and builds SKUs like{' '}
+              <span className="font-mono">ORI-ACC-CLIP-WH</span>.
+            </>
+          ) : trackMode ? (
+            <>
+              Type <strong>Track</strong> shows track-system identity only — no Profile, Light Source or Light
+              Quality.
+            </>
+          ) : profileMode ? (
+            <>
+              Type <strong>LED Profiles</strong>: choose Diffuser or Profile, then length (like Track).
+            </>
+          ) : (
+            <>
+              Groups, orders &amp; filters this code in the public <strong>Product Codes</strong> list. Choose{' '}
+              <strong>Track</strong> / <strong>LED Profiles</strong> / <strong>Accessories</strong> for those
+              builders.
+            </>
+          )}
         </p>
       </div>
 
@@ -255,6 +343,9 @@ export function VariantBuilderPanel({
               lumen={systemLumens}
               onLumenChange={setSystemLumens}
               accessoryMode={accessoryMode}
+              trackMode={trackMode}
+              profileMode={profileMode}
+              subcategory={data.subcategory}
             />
           </div>
 
@@ -285,33 +376,42 @@ export function VariantBuilderPanel({
             </div>
             <div>
               <label className={labelClass}>IP rating</label>
-              <select className={fieldClass} value={data.ipRating} onChange={(e) => set('ipRating', e.target.value)}>
-                <option value="">— choose —</option>
-                {['IP20', 'IP44', 'IP54', 'IP65', 'IP67', 'IP68'].map((ip) => (
-                  <option key={ip} value={ip}>{ip}</option>
-                ))}
-              </select>
+              <AdminSelect
+                aria-label="IP rating"
+                value={data.ipRating}
+                onChange={(v) => set('ipRating', v)}
+                options={['IP20', 'IP44', 'IP54', 'IP65', 'IP67', 'IP68'].map((ip) => ({
+                  value: ip,
+                  label: ip,
+                }))}
+              />
             </div>
             <div>
               <label className={labelClass}>Electrical class</label>
-              <select className={fieldClass} value={data.electricalClass} onChange={(e) => set('electricalClass', e.target.value)}>
-                <option value="">— choose —</option>
-                <option value="Class I">Class I</option>
-                <option value="Class II">Class II</option>
-                <option value="Class III">Class III</option>
-              </select>
+              <AdminSelect
+                aria-label="Electrical class"
+                value={data.electricalClass}
+                onChange={(v) => set('electricalClass', v)}
+                options={[
+                  { value: 'Class I', label: 'Class I' },
+                  { value: 'Class II', label: 'Class II' },
+                  { value: 'Class III', label: 'Class III' },
+                ]}
+              />
             </div>
             <div>
               <label className={labelClass}>Material</label>
-              <select className={fieldClass} value={data.material} onChange={(e) => set('material', e.target.value)}>
-                <option value="">— choose —</option>
-                {data.material && !MATERIAL_OPTIONS.includes(data.material) && (
-                  <option value={data.material}>{data.material}</option>
-                )}
-                {MATERIAL_OPTIONS.map((m) => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </select>
+              <AdminSelect
+                aria-label="Material"
+                value={data.material}
+                onChange={(v) => set('material', v)}
+                options={[
+                  ...(data.material && !MATERIAL_OPTIONS.includes(data.material)
+                    ? [{ value: data.material, label: data.material }]
+                    : []),
+                  ...MATERIAL_OPTIONS.map((m) => ({ value: m, label: m })),
+                ]}
+              />
             </div>
           </div>
 
@@ -370,27 +470,43 @@ export function VariantBuilderPanel({
             </div>
           </div>
           <p className="text-[11px] text-gray-500">
-            <strong>CCT, CRI, beam angle and System wattage are added to the sheet automatically</strong> from
-            your Builder choices (Light quality / Power) — no need to retype them here. Use this table only for
-            <strong> extra measured</strong> values (source lumens, source wattage, efficacy, MacAdam
-            step, lifetime). <strong>Lumen (system)</strong> is set in <strong>General data</strong>.
+            {trackMode || profileMode ? (
+              <>
+                {trackMode ? 'Track' : 'LED Profile'} products do not use Light Source / Light Quality. Add any
+                measured values (e.g. voltage, circuit rating) in the table below.
+              </>
+            ) : (
+              <>
+                <strong>CCT, CRI, beam angle and System wattage</strong> come from{' '}
+                <strong>General data → Light quality / Power</strong> (set them there). Values marked “—” are
+                not filled yet. Use the table below only for <strong>extra measured</strong> values.
+                <strong> Lumen (system)</strong> is set in <strong>General data</strong>.
+              </>
+            )}
           </p>
 
-          {/* Read-only preview of the values auto-filled from the Builder. */}
-          {derivedTech.length > 0 && (
-            <div className="border border-gray-200 bg-gray-50 p-3 space-y-2">
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">
-                From Builder (auto-added to sheet)
-              </p>
-              {derivedTech.map((t, i) => (
-                <div key={`d-${i}`} className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <input className={`${fieldClass} bg-gray-100 text-gray-500`} value={t.campo} readOnly tabIndex={-1} />
-                  <input className={`${fieldClass} bg-gray-100 text-gray-500`} value={t.valor} readOnly tabIndex={-1} />
-                  <input className={`${fieldClass} bg-gray-100 text-gray-500`} value={t.unidad} readOnly tabIndex={-1} />
-                </div>
-              ))}
-            </div>
-          )}
+          {/* Auto fields from Builder — hidden for track / profile (no photometrics). */}
+          <div
+            className="border border-gray-200 bg-gray-50 p-3 space-y-2"
+            hidden={trackMode || profileMode}
+          >
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400">
+              From Builder (auto-added to sheet)
+            </p>
+            {derivedTech.map((t, i) => (
+              <div key={`d-${i}`} className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <input className={`${fieldClass} bg-gray-100 text-gray-500`} value={t.campo} readOnly tabIndex={-1} />
+                <input
+                  className={`${fieldClass} bg-gray-100 ${t.valor === '—' ? 'text-gray-400 italic' : 'text-gray-700'}`}
+                  value={t.valor}
+                  readOnly
+                  tabIndex={-1}
+                  title={t.valor === '—' ? 'Set this in General data → Light quality / Power' : undefined}
+                />
+                <input className={`${fieldClass} bg-gray-100 text-gray-500`} value={t.unidad} readOnly tabIndex={-1} />
+              </div>
+            ))}
+          </div>
 
           <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 pt-1">
             Additional measured values

@@ -3,8 +3,8 @@
 import { useEffect, type Dispatch, type SetStateAction } from 'react';
 import type { SkuState } from '@/lib/sku/skuRules';
 import {
-  deriveIdentity,
   deriveSeries,
+  syncIdentityFromSku,
   type LinkFlags,
   type SpecSheetData,
 } from '@/lib/sku/specSheet';
@@ -21,11 +21,12 @@ export interface SpecSheetSync {
 /**
  * Owns the SKU ↔ identity auto-sync for a spec sheet. The auto/manual state
  * (`link` + `seriesLinked`) lives INSIDE `data` so it is persisted with the
- * sheet — a hand override survives a reload instead of being clobbered by the
- * auto-sync on mount. Instantiate ONCE in the parent that owns `data` and share
- * the returned handlers with both the Builder (SKU inputs / Re-apply) and the
- * Product tab (Name / Code / descriptions). Instantiating it more than once
- * against the same data would run duplicate effects that clobber each other.
+ * sheet. Instantiating ONCE in the parent that owns `data` and share the
+ * returned handlers with both the Builder and the Product tab.
+ *
+ * Builder SKU changes always re-sync Name / Code / descriptions (Builder is
+ * source of truth). Hand edits in the Product tab last only until the next
+ * SKU-driven change (or Re-apply).
  */
 export function useSpecSheetSync(
   data: SpecSheetData,
@@ -43,33 +44,26 @@ export function useSpecSheetSync(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data.productName, data.seriesLinked]);
 
-  // Auto-fill derived fields (Name, code, descriptions) from the SKU while their
-  // link flag is on. Fields switched to manual (flag off) are left untouched.
+  // Keep identity locked to the current Builder SKU (+ description inputs).
+  // Any SKU / productName / material / lumen change re-applies Name/Code/descriptions
+  // so the title, Product tab, Preview and Save never keep a stale previous code.
   useEffect(() => {
-    onChange((prev) => {
-      const derived = deriveIdentity(prev);
-      const l = prev.link;
-      const want = {
-        name: l.name ? derived.name : prev.name,
-        code: l.code ? derived.code : prev.code,
-        codeDescription: l.codeDescription ? derived.codeDescription : prev.codeDescription,
-        description: l.description ? derived.description : prev.description,
-      };
-      if (
-        want.name === prev.name &&
-        want.code === prev.code &&
-        want.codeDescription === prev.codeDescription &&
-        want.description === prev.description
-      ) {
-        return prev;
-      }
-      return { ...prev, ...want };
-    });
+    onChange((prev) => syncIdentityFromSku(prev));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data.sku, data.productName, data.material, data.ipRating, data.electricalClass, data.ancho, data.alto, data.fondo, data.datosTecnicos, link]);
+  }, [
+    data.sku,
+    data.productName,
+    data.material,
+    data.ipRating,
+    data.electricalClass,
+    data.ancho,
+    data.alto,
+    data.fondo,
+    data.datosTecnicos,
+  ]);
 
   // Editing a field by hand switches it to manual (stops the sync) and stores
-  // the value — both persisted inside `data`.
+  // the value — until the next Builder SKU change re-syncs via the effect above.
   const setLinkedField = (key: keyof LinkFlags, value: string) => {
     onChange((prev) => ({
       ...prev,
@@ -84,27 +78,20 @@ export function useSpecSheetSync(
       const seriesLinked =
         prev.seriesLinked &&
         (sku.series === prev.sku.series || sku.series === deriveSeries(prev.productName));
-      return { ...prev, sku, seriesLinked };
+      // Apply identity immediately (don't wait for the effect) so title/preview
+      // update in the same render cycle as the SKU black box.
+      return syncIdentityFromSku({ ...prev, sku, seriesLinked });
     });
   };
 
   const relinkAll = () => {
     onChange((prev) => {
       const nextSku = { ...prev.sku, series: deriveSeries(prev.productName) };
-      const withLinks: SpecSheetData = {
+      return syncIdentityFromSku({
         ...prev,
         sku: nextSku,
         seriesLinked: true,
-        link: { name: true, code: true, codeDescription: true, description: true },
-      };
-      const derived = deriveIdentity(withLinks);
-      return {
-        ...withLinks,
-        name: derived.name,
-        code: derived.code,
-        codeDescription: derived.codeDescription,
-        description: derived.description,
-      };
+      });
     });
   };
 

@@ -5,7 +5,7 @@ import { revalidatePath } from 'next/cache';
 import { slugify } from '@/lib/utils';
 import { buildSku } from '@/lib/sku/skuRules';
 import { specSheetToVariantFields } from '@/lib/sku/mapToLuken';
-import { withAutoLastUpdate, type SpecSheetData } from '@/lib/sku/specSheet';
+import { syncIdentityFromSku, withAutoLastUpdate, type SpecSheetData } from '@/lib/sku/specSheet';
 
 const IMAGE_BUCKET_TYPES = new Set(['image', 'installed_image', 'dimensions_image', 'photometric_image']);
 
@@ -73,7 +73,9 @@ export async function saveVariantBuilder(
   if (!supabase) return { error: 'Supabase not configured' };
 
   // Last updated is always the save day — never a manual field.
-  data = withAutoLastUpdate(data);
+  // Builder SKU is source of truth for identity — never persist a stale Name/Code
+  // left over from a previous configuration (manual link flags / old sheet data).
+  data = syncIdentityFromSku(withAutoLastUpdate(data));
 
   const r = buildSku(data.sku);
   const code = (data.code || r.shortCode).trim();

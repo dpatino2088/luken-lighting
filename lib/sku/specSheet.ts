@@ -114,6 +114,17 @@ export function isAccessoriesType(subcategory: string | null | undefined): boole
   return (subcategory || '').trim().toLowerCase() === 'accessories';
 }
 
+/** Type = Track Line Voltage / Track Low Voltage → track identity SKU (no fixture photometrics). */
+export function isTrackType(subcategory: string | null | undefined): boolean {
+  const s = (subcategory || '').trim().toLowerCase();
+  return s === 'track line voltage' || s === 'track low voltage';
+}
+
+/** Type = LED Profiles → profile identity SKU (mutually exclusive with track). */
+export function isProfileType(subcategory: string | null | undefined): boolean {
+  return (subcategory || '').trim().toLowerCase() === 'led profiles';
+}
+
 /**
  * Related Variant “Component” = Type (subcategory) as stored on the variant’s
  * sheet. Never invent Shape / Fixture / mounting labels.
@@ -129,7 +140,6 @@ export const MONTAJE_OPTIONS = [
   'Ceiling mounted',
   'Wall mounted',
   'Track mounted',
-  'Linear / Trunking',
   'In-ground / In-grade',
   'Floor standing',
   'Table / Desk',
@@ -264,7 +274,11 @@ export function primaryLumen(
 // Profile products (linear cross-sections) also get a "W x H x D mm" token built
 // from the dimensions, right after the SKU description.
 export function composeAutoDescription(longDesc: string, d: SpecSheetData): string {
-  const isTrackOrProfile = Boolean((d.sku.track || '').trim() || (d.sku.profile || '').trim());
+  const isTrackOrProfile = Boolean(
+    (d.sku.track || '').trim() ||
+      (d.sku.profile || '').trim() ||
+      (d.sku.profileKind || '').trim()
+  );
   const dimToken = isTrackOrProfile
     ? [d.ancho, d.alto, d.fondo].map((s) => (s || '').trim()).filter(Boolean).join(' x ')
     : '';
@@ -290,6 +304,35 @@ export function deriveIdentity(d: SpecSheetData): {
     code: r.shortCode,
     codeDescription: r.shortDesc,
     description: composeAutoDescription(r.longDesc, d),
+  };
+}
+
+/**
+ * Force identity (Name / Code / descriptions) from the current SKU and re-enable
+ * auto-sync flags. Builder is the source of truth — call whenever SKU inputs
+ * change or right before save so stale manual overrides cannot linger.
+ */
+export function syncIdentityFromSku(prev: SpecSheetData): SpecSheetData {
+  const derived = deriveIdentity(prev);
+  if (
+    prev.name === derived.name &&
+    prev.code === derived.code &&
+    prev.codeDescription === derived.codeDescription &&
+    prev.description === derived.description &&
+    prev.link.name &&
+    prev.link.code &&
+    prev.link.codeDescription &&
+    prev.link.description
+  ) {
+    return prev;
+  }
+  return {
+    ...prev,
+    link: { name: true, code: true, codeDescription: true, description: true },
+    name: derived.name,
+    code: derived.code,
+    codeDescription: derived.codeDescription,
+    description: derived.description,
   };
 }
 
