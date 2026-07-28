@@ -1,8 +1,11 @@
 import { notFound } from 'next/navigation';
 import { createClient } from '@/lib/supabase/server';
+import { PUBLIC_VARIANT_DETAIL, PUBLIC_VARIANT_RELATED } from '@/lib/supabase/publicSelects';
 import { ProductVariant } from '@/lib/types';
 import { generateMetadata as genMeta } from '@/lib/seo';
 import { VariantView } from '../VariantView';
+
+export const dynamic = 'force-dynamic';
 
 interface PageProps {
   params: Promise<{ slug: string; variantSlug: string }>;
@@ -37,9 +40,7 @@ export default async function VariantPage({ params }: PageProps) {
 
   const { data: variant, error } = await supabase
     .from('product_variants')
-    .select(
-      `*, category:product_categories(*), product:products!inner(*), skus:product_skus(*), assets:product_assets(*)`
-    )
+    .select(PUBLIC_VARIANT_DETAIL)
     .eq('slug', variantSlug)
     .single();
 
@@ -47,18 +48,25 @@ export default async function VariantPage({ params }: PageProps) {
     notFound();
   }
 
-  const { data: relatedVariants } = await supabase
-    .from('product_variants')
-    .select(`*, category:product_categories(*), assets:product_assets(*)`)
-    .eq('category_id', variant.category_id)
-    .eq('is_active', true)
-    .neq('id', variant.id)
-    .limit(4);
+  // Related Variants = the rest of the family, resolved automatically. Curating
+  // this by hand meant every new variant had to be added to each of its siblings.
+  // The Builder's "Related Product" list is for accessories on the spec sheet.
+  let related: ProductVariant[] = [];
+  if (variant.product_id) {
+    const { data } = await supabase
+      .from('product_variants')
+      .select(PUBLIC_VARIANT_RELATED)
+      .eq('product_id', variant.product_id)
+      .eq('is_active', true)
+      .neq('id', variant.id)
+      .order('code');
+    related = (data as unknown as ProductVariant[]) || [];
+  }
 
   return (
     <VariantView
       variant={variant}
-      relatedVariants={(relatedVariants as ProductVariant[]) || []}
+      relatedVariants={related}
     />
   );
 }

@@ -4,6 +4,7 @@ import { Container } from '@/components/ui/Container';
 import { Button } from '@/components/ui/Button';
 import { ProductGrid } from '@/components/ProductGrid';
 import { createClient } from '@/lib/supabase/server';
+import { PUBLIC_VARIANT_WITH_RELATIONS } from '@/lib/supabase/publicSelects';
 import { getSiteImages } from '@/lib/site-images';
 import { ProductVariant, ProductCategory, InspirationProject } from '@/lib/types';
 
@@ -14,12 +15,7 @@ export default async function HomePage() {
   const { data: featuredVariants } = supabase
     ? await supabase
         .from('product_variants')
-        .select(`
-          *,
-          category:product_categories(*),
-          product:products(*),
-          assets:product_assets(*)
-        `)
+        .select(PUBLIC_VARIANT_WITH_RELATIONS)
         .eq('is_active', true)
         .eq('is_featured', true)
         .limit(8)
@@ -254,7 +250,7 @@ export default async function HomePage() {
               </p>
             </div>
 
-            <ProductGrid products={featuredVariants as ProductVariant[]} />
+            <ProductGrid products={featuredVariants as unknown as ProductVariant[]} />
 
             <div className="text-center mt-12">
               <Link href="/products">

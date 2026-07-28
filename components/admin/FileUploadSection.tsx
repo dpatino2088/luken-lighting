@@ -2,12 +2,13 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Upload, FileText, Image as ImageIcon, FileSpreadsheet, Box, Trash2 } from 'lucide-react';
+import { Upload, FileText, Image as ImageIcon, FileSpreadsheet, Box, Trash2, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { createClient } from '@/lib/supabase/client';
 import { compressImage } from '@/lib/utils/compressImage';
 import { checkImageSize } from '@/lib/utils/fileSize';
 import { saveVariantAsset, deleteVariantAsset } from '@/app/(admin)/admin/variants/actions';
+import { assetDownloadHref, getLatestAsset } from '@/lib/assets';
 import { confirmDialog } from '@/components/ui/ConfirmDialog';
 import { toast } from '@/components/ui/Toast';
 import type { ProductAsset } from '@/lib/types';
@@ -31,9 +32,20 @@ const ASSET_TYPES = [
 interface Props {
   productId: string;
   assets: ProductAsset[];
+  /** Regenerate the datasheet from the Preview. Only offered on the PDF slot. */
+  onUpdateDatasheet?: () => void;
+  datasheetBusy?: boolean;
+  /** Sheet content changed since the stored PDF was generated. */
+  datasheetOutdated?: boolean;
 }
 
-export function FileUploadSection({ productId, assets: initialAssets }: Props) {
+export function FileUploadSection({
+  productId,
+  assets: initialAssets,
+  onUpdateDatasheet,
+  datasheetBusy = false,
+  datasheetOutdated = false,
+}: Props) {
   const router = useRouter();
   const [assets, setAssets] = useState<ProductAsset[]>(initialAssets);
   const [uploading, setUploading] = useState<string | null>(null);
@@ -128,8 +140,9 @@ export function FileUploadSection({ productId, assets: initialAssets }: Props) {
 
       if (asset.file_url && asset.file_url.includes('/storage/v1/object/public/')) {
         const pathParts = asset.file_url.split(`/storage/v1/object/public/${bucket}/`);
-        if (pathParts[1]) {
-          await supabase.storage.from(bucket).remove([decodeURIComponent(pathParts[1])]);
+        const raw = pathParts[1]?.split('?')[0]?.split('#')[0];
+        if (raw) {
+          await supabase.storage.from(bucket).remove([decodeURIComponent(raw)]);
         }
       }
 
@@ -164,10 +177,15 @@ export function FileUploadSection({ productId, assets: initialAssets }: Props) {
     e.target.value = '';
   };
 
-  const groupedAssets = ASSET_TYPES.map((type) => ({
-    ...type,
-    files: assets.filter((a) => a.type === type.value),
-  }));
+  const groupedAssets = ASSET_TYPES.map((type) => {
+    const files = assets.filter((a) => a.type === type.value);
+    // Datasheet is a singleton — Update PDF replaces the slot; never list leftovers.
+    if (type.value === 'datasheet') {
+      const latest = getLatestAsset(files, 'datasheet');
+      return { ...type, files: latest ? [latest as ProductAsset] : [] };
+    }
+    return { ...type, files };
+  });
 
   return (
     <div className="space-y-6">
@@ -189,27 +207,48 @@ export function FileUploadSection({ productId, assets: initialAssets }: Props) {
                   <span className="text-sm font-medium">{group.label}</span>
                   <span className="text-xs text-gray-400">({group.files.length})</span>
                   {group.value === 'datasheet' && (
-                    <span className="text-[10px] uppercase tracking-wide text-gray-400 truncate">
-                      Auto on Save builder
+                    <span
+                      className={
+                        'text-[10px] uppercase tracking-wide truncate ' +
+                        (datasheetOutdated ? 'text-amber-600' : 'text-gray-400')
+                      }
+                    >
+                      {datasheetOutdated ? 'Out of date · sheet changed' : 'Generated from Preview'}
                     </span>
                   )}
                 </div>
-                <Button
-                  type="button"
-                  variant="secondary"
-                  size="sm"
-                  disabled={uploading === group.value}
-                  onClick={() => triggerFileSelect(group.value)}
-                >
-                  {uploading === group.value ? (
-                    'Uploading...'
-                  ) : (
-                    <>
-                      <Upload className="w-3 h-3 mr-1" />
-                      {group.value === 'datasheet' ? 'Replace' : 'Upload'}
-                    </>
+                <div className="flex items-center gap-2 shrink-0">
+                  {group.value === 'datasheet' && onUpdateDatasheet && (
+                    <Button
+                      type="button"
+                      variant={datasheetOutdated ? 'primary' : 'secondary'}
+                      size="sm"
+                      disabled={datasheetBusy || uploading === group.value}
+                      onClick={onUpdateDatasheet}
+                    >
+                      <RefreshCw
+                        className={'w-3 h-3 mr-1' + (datasheetBusy ? ' animate-spin' : '')}
+                      />
+                      {datasheetBusy ? 'Updating…' : 'Update PDF'}
+                    </Button>
                   )}
-                </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={uploading === group.value}
+                    onClick={() => triggerFileSelect(group.value)}
+                  >
+                    {uploading === group.value ? (
+                      'Uploading...'
+                    ) : (
+                      <>
+                        <Upload className="w-3 h-3 mr-1" />
+                        {group.value === 'datasheet' ? 'Replace' : 'Upload'}
+                      </>
+                    )}
+                  </Button>
+                </div>
               </div>
 
               {group.files.length > 0 && (
@@ -230,7 +269,7 @@ export function FileUploadSection({ productId, assets: initialAssets }: Props) {
                           <FileText className="w-4 h-4 text-gray-400 shrink-0" />
                         )}
                         <a
-                          href={asset.file_url}
+                          href={assetDownloadHref(asset)}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-blue-600 hover:underline truncate"

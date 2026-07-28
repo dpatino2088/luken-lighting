@@ -226,6 +226,39 @@ export function skuColorName(code: string): string {
   return (T.color as Record<string, string>)[c] ?? c;
 }
 
+/** Reverse: finish label → SKU color code (e.g. "White trim / Black diffuser" → "WH/BK"). */
+export function skuColorCodeFromFinish(finish: string | null | undefined): string {
+  const f = (finish || '').trim();
+  if (!f) return '';
+  for (const [code, label] of Object.entries(T.color as Record<string, string>)) {
+    if (label === f) return code;
+  }
+  return '';
+}
+
+/**
+ * Color code for a variant row: from finish label, else parse Long/Short SKU
+ * (WH, BK, WH/BK, …). Longer codes matched first so WH/BK wins over WH.
+ */
+export function extractSkuColorCode(
+  code: string | null | undefined,
+  finish?: string | null
+): string {
+  const fromFinish = skuColorCodeFromFinish(finish);
+  if (fromFinish) return fromFinish;
+
+  const raw = (code || '').trim();
+  if (!raw) return '';
+  const codes = Object.keys(T.color as Record<string, string>).sort(
+    (a, b) => b.length - a.length
+  );
+  for (const c of codes) {
+    const escaped = c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (new RegExp(`(?:^|-)${escaped}(?:-|$)`, 'i').test(raw)) return c;
+  }
+  return '';
+}
+
 /** Human label for a track code (e.g. "MAG48" → "48V Magnetic track"). */
 export function skuTrackName(code: string): string {
   const c = (code || '').trim();

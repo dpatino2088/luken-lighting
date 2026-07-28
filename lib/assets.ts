@@ -32,7 +32,7 @@ export function getLatestAsset<T extends AssetLike>(
   });
 }
 
-/** Latest file_url for `type`, optionally cache-busted with asset id. */
+/** Latest file_url for `type`, optionally cache-busted with created_at + id. */
 export function getLatestAssetUrl(
   assets: AssetLike[] | null | undefined,
   type: string,
@@ -40,9 +40,25 @@ export function getLatestAssetUrl(
 ): string | null {
   const latest = getLatestAsset(assets, type);
   if (!latest?.file_url) return null;
-  if (!opts?.cacheBust || !latest.id) return latest.file_url;
+  if (!opts?.cacheBust) return latest.file_url;
+  const stamp =
+    (latest.created_at ? new Date(latest.created_at).getTime() : 0) ||
+    latest.id ||
+    String(Date.now());
   const sep = latest.file_url.includes('?') ? '&' : '?';
-  return `${latest.file_url}${sep}v=${encodeURIComponent(latest.id)}`;
+  // Use `t=` so it stacks with any `?v=` already stored on the URL.
+  return `${latest.file_url}${sep}t=${encodeURIComponent(String(stamp))}`;
+}
+
+/** Public download href — always cache-busted for singleton docs like datasheet. */
+export function assetDownloadHref(asset: AssetLike | null | undefined): string {
+  if (!asset?.file_url) return '#';
+  const stamp =
+    (asset.created_at ? new Date(asset.created_at).getTime() : 0) ||
+    asset.id ||
+    String(Date.now());
+  const sep = asset.file_url.includes('?') ? '&' : '?';
+  return `${asset.file_url}${sep}t=${encodeURIComponent(String(stamp))}`;
 }
 
 /** Sort assets of a type newest-first (for galleries that lead with the current primary). */

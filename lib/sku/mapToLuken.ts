@@ -183,8 +183,9 @@ export function specSheetToVariantFields(data: SpecSheetData, environment: strin
 
   return {
     // Prefer live SKU build so a stale sheet identity never wins.
+    // Long SKU distinguishes variants that share the same short stem.
     name: [data.productName.trim(), r.nameBody].filter(Boolean).join(' ') || data.name || data.productName,
-    code: r.shortCode || data.code,
+    code: r.longCode || r.shortCode || data.code,
     short_description: r.shortDesc || data.codeDescription,
     long_description: data.description || r.longDesc,
     light_source: lightSource(data.sku),

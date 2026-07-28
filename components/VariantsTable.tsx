@@ -2,6 +2,7 @@ import { Fragment } from 'react';
 import Link from 'next/link';
 import { ProductVariant } from '@/lib/types';
 import { formatCCT } from '@/lib/utils';
+import { extractSkuColorCode } from '@/lib/sku/skuRules';
 import { ExternalLink } from 'lucide-react';
 import { VariantThumb } from '@/components/VariantThumb';
 
@@ -74,6 +75,12 @@ export function VariantsTable({ variants, productSlug }: VariantsTableProps) {
                 Code
               </th>
               <th className="px-5 py-3 text-left text-xs font-medium tracking-wide text-gray-600">
+                Optic
+              </th>
+              <th className="px-5 py-3 text-left text-xs font-medium tracking-wide text-gray-600">
+                Color
+              </th>
+              <th className="px-5 py-3 text-left text-xs font-medium tracking-wide text-gray-600">
                 Power
               </th>
               <th className="px-5 py-3 text-left text-xs font-medium tracking-wide text-gray-600">
@@ -97,7 +104,7 @@ export function VariantsTable({ variants, productSlug }: VariantsTableProps) {
                 {showHeaders && (
                   <tr className="bg-gray-50/60 border-t border-gray-100">
                     <td
-                      colSpan={8}
+                      colSpan={10}
                       className="px-5 py-2 text-[13px] font-medium tracking-wide text-gray-500"
                     >
                       {group.name}
@@ -123,6 +130,12 @@ export function VariantsTable({ variants, productSlug }: VariantsTableProps) {
                       >
                         {v.full_code || v.code || '—'}
                       </Link>
+                    </td>
+                    <td className="px-5 py-3.5 text-sm font-medium text-gray-900 tabular-nums">
+                      {v.beam_angle != null ? `${v.beam_angle}°` : '—'}
+                    </td>
+                    <td className="px-5 py-3.5 text-sm font-mono font-medium text-gray-900">
+                      {extractSkuColorCode(v.full_code || v.code, v.finish) || '—'}
                     </td>
                     <td className="px-5 py-3.5 text-sm text-gray-600">
                       {(v.power_w_system || v.power_w) ? `${v.power_w_system || v.power_w}W` : '—'}
@@ -168,7 +181,9 @@ export function VariantsTable({ variants, productSlug }: VariantsTableProps) {
                 <span className="ml-2 text-gray-400">({group.items.length})</span>
               </h3>
             )}
-            {group.items.map((v) => (
+            {group.items.map((v) => {
+              const colorCode = extractSkuColorCode(v.full_code || v.code, v.finish);
+              return (
               <Link
                 key={v.id}
                 href={variantHref(v)}
@@ -182,6 +197,12 @@ export function VariantsTable({ variants, productSlug }: VariantsTableProps) {
                     <ExternalLink className="h-4 w-4 text-gray-400 flex-shrink-0 mt-0.5" />
                   </div>
                   <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600">
+                    {v.beam_angle != null && (
+                      <span className="font-medium text-gray-900">{v.beam_angle}°</span>
+                    )}
+                    {colorCode ? (
+                      <span className="font-mono font-medium text-gray-900">{colorCode}</span>
+                    ) : null}
                     {(v.power_w_system || v.power_w) && <span>{v.power_w_system || v.power_w}W</span>}
                     {(v.lumens_system || v.lumens) && <span>{v.lumens_system || v.lumens}lm</span>}
                     {(v.cct_min || v.cct_max) && <span>{formatCCT(v.cct_min, v.cct_max)}</span>}
@@ -192,7 +213,8 @@ export function VariantsTable({ variants, productSlug }: VariantsTableProps) {
                   </div>
                 </div>
               </Link>
-            ))}
+              );
+            })}
           </div>
         ))}
       </div>

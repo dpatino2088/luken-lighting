@@ -2,7 +2,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { ChevronRight, Download } from 'lucide-react';
 import { Container } from '@/components/ui/Container';
-import { ProductGrid } from '@/components/ProductGrid';
+import { ProductCarousel } from '@/components/ProductCarousel';
 import { ProductTabs } from '@/components/ProductTabs';
 import { ProductVariant, ProductAsset } from '@/lib/types';
 import { formatDimensions, formatCCT, formatCRI } from '@/lib/utils';
@@ -13,7 +13,7 @@ import {
   ASSET_TYPE_LABELS,
   ASSET_TYPE_ICONS,
 } from './product-constants';
-import { getLatestAssetUrl, sortAssetsNewestFirst } from '@/lib/assets';
+import { assetDownloadHref, getLatestAsset, getLatestAssetUrl, sortAssetsNewestFirst } from '@/lib/assets';
 
 /* ─── Variant detail view — web datasheet ─────────────────────────────────── */
 
@@ -35,10 +35,11 @@ export function VariantView({
   const photometricImages = sortAssetsNewestFirst(
     allAssets.filter((a) => a.type === 'photometric_image'),
   );
-  const documents =
-    variant.assets?.filter((a: ProductAsset) => !IMAGE_ASSET_TYPES.has(a.type)) || [];
+  const documents = sortAssetsNewestFirst(
+    (variant.assets?.filter((a: ProductAsset) => !IMAGE_ASSET_TYPES.has(a.type)) || []) as ProductAsset[],
+  );
   const mainImage =
-    getLatestAssetUrl(variant.assets, 'image') || '/images/placeholder-product.jpg';
+    getLatestAssetUrl(variant.assets, 'image', { cacheBust: true }) || '/images/placeholder-product.jpg';
 
   const documentsByType = documents.reduce(
     (acc: Record<string, ProductAsset[]>, doc: ProductAsset) => {
@@ -49,6 +50,15 @@ export function VariantView({
     },
     {} as Record<string, ProductAsset[]>
   );
+  // Prefer newest file within each type (datasheet re-exports must win).
+  for (const type of Object.keys(documentsByType)) {
+    documentsByType[type] = sortAssetsNewestFirst(documentsByType[type]);
+  }
+  // Datasheet is a singleton slot — never list stale duplicates after Update.
+  const latestDatasheet = getLatestAsset(documents, 'datasheet');
+  if (latestDatasheet) {
+    documentsByType.datasheet = [latestDatasheet as ProductAsset];
+  }
 
   const productName = variant.product?.name || '';
   const categoryName = variant.category?.name || '';
@@ -158,7 +168,7 @@ export function VariantView({
                 {(docs as ProductAsset[]).map((doc) => (
                   <a
                     key={doc.id}
-                    href={doc.file_url}
+                    href={assetDownloadHref(doc)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="flex items-center gap-4 p-4 border border-gray-200 hover:border-gray-900 hover:bg-gray-50 transition-all group"
@@ -217,7 +227,9 @@ export function VariantView({
             </>
           )}
           <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" />
-          <span className="text-gray-900 flex-shrink-0">{variant.code}</span>
+          <span className="text-gray-900 flex-shrink-0 truncate max-w-[240px] sm:max-w-md">
+            {variant.name || variant.code}
+          </span>
         </nav>
 
         {/* ── Datasheet header ─────────────────────────────────────────────── */}
@@ -227,7 +239,7 @@ export function VariantView({
             <div className="aspect-[4/3] bg-gray-100 relative overflow-hidden">
               <Image
                 src={mainImage}
-                alt={variant.code}
+                alt={variant.name || variant.code}
                 fill
                 className="object-cover"
                 priority
@@ -273,10 +285,17 @@ export function VariantView({
               )}
             </div>
 
-            {/* Code as main title */}
-            <h1 className="text-3xl lg:text-4xl font-light tracking-widest uppercase mb-6">
-              {variant.code}
+            {/* Name first; Long SKU underneath (smaller) for hierarchy */}
+            <h1 className="text-3xl lg:text-4xl font-light tracking-widest uppercase text-gray-900">
+              {variant.name || productName || variant.code}
             </h1>
+            {variant.code ? (
+              <p className="mt-2 mb-6 font-mono text-[11px] sm:text-xs text-gray-400 break-all leading-snug">
+                {variant.code}
+              </p>
+            ) : (
+              <div className="mb-6" />
+            )}
 
             {/* Tags */}
             <div className="flex flex-wrap gap-2 mb-6">
@@ -332,13 +351,13 @@ export function VariantView({
           </div>
         )}
 
-        {/* Related products */}
+        {/* Related variants (same family / category) */}
         {relatedVariants.length > 0 && (
           <section>
             <h2 className="text-2xl font-light tracking-wide uppercase mb-6">
-              Related Products
+              Related Variants
             </h2>
-            <ProductGrid products={relatedVariants} />
+            <ProductCarousel products={relatedVariants} hideSku />
           </section>
         )}
 

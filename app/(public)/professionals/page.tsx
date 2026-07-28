@@ -21,7 +21,7 @@ export default async function ProfessionalsPage() {
     ? await supabase
         .from('product_assets')
         .select('*')
-        .is('product_id', null)
+        .is('variant_id', null)
         .order('sort_order')
     : { data: null };
 

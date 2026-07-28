@@ -124,8 +124,10 @@ export interface ProductVariant {
   
   manufacturer: string | null;
   manufacturer_sku: string | null;
-  cost_usd: number | null;
-  distributor_price: number | null;
+  // Portal-only pricing: anon has no column grant for these, so public queries
+  // never select them and public rows genuinely arrive without them.
+  cost_usd?: number | null;
+  distributor_price?: number | null;
 
   is_active: boolean;
   is_featured: boolean;

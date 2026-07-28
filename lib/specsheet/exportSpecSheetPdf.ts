@@ -2,9 +2,10 @@
 
 import html2canvas from 'html2canvas';
 import { jsPDF } from 'jspdf';
+import { SHEET_HEIGHT_PX, SHEET_PAD_PX, SHEET_WIDTH_PX } from '@/lib/specsheet/sheetGeometry';
+import { serializeSpecSheetForPdf } from '@/lib/specsheet/serializeSpecSheet';
 
-const LETTER_W_IN = 8.5;
-const LETTER_H_IN = 11;
+export { SHEET_HEIGHT_PX, SHEET_PAD_PX, SHEET_WIDTH_PX } from '@/lib/specsheet/sheetGeometry';
 
 async function waitForImages(root: HTMLElement): Promise<void> {
   const imgs = Array.from(root.querySelectorAll('img'));
@@ -19,71 +20,187 @@ async function waitForImages(root: HTMLElement): Promise<void> {
           const done = () => resolve();
           img.addEventListener('load', done, { once: true });
           img.addEventListener('error', done, { once: true });
-          // Cached / broken images can leave us hanging.
           setTimeout(done, 4000);
         })
     )
   );
 }
 
-/**
- * Capture `#spec-sheet-print` into a US Letter PDF blob (same layout as Preview).
- * Temporarily reveals hidden ancestors so layout has real dimensions.
- */
-export async function exportSpecSheetPdfBlob(
-  rootId = 'spec-sheet-print'
-): Promise<Blob> {
-  const el = document.getElementById(rootId);
-  if (!el) throw new Error('Spec sheet preview not found. Open Preview once, then save again.');
-
-  const hiddenAncestors: HTMLElement[] = [];
+function revealHiddenAncestors(el: HTMLElement): HTMLElement[] {
+  const hidden: HTMLElement[] = [];
   let node: HTMLElement | null = el;
   while (node) {
     if (node.hasAttribute('hidden')) {
-      hiddenAncestors.push(node);
+      hidden.push(node);
       node.removeAttribute('hidden');
+    }
+    const style = window.getComputedStyle(node);
+    if (style.opacity === '0' || style.visibility === 'hidden') {
+      hidden.push(node);
+      node.style.setProperty('opacity', '1', 'important');
+      node.style.setProperty('visibility', 'visible', 'important');
+      node.dataset.specSheetReveal = '1';
     }
     node = node.parentElement;
   }
+  return hidden;
+}
 
-  // Off-screen hosts (left: -120vw) still have layout; force a paint.
-  await waitForImages(el);
+function restoreRevealed(nodes: HTMLElement[]) {
+  for (const n of nodes) {
+    if (n.dataset.specSheetReveal === '1') {
+      n.style.removeProperty('opacity');
+      n.style.removeProperty('visibility');
+      delete n.dataset.specSheetReveal;
+    } else {
+      n.setAttribute('hidden', '');
+    }
+  }
+}
+
+/** Chromium print→PDF (same engine as browser Preview / Save as PDF). */
+async function exportViaChromium(): Promise<Blob> {
+  const snapshot = await serializeSpecSheetForPdf();
+  const res = await fetch('/api/spec-sheet-pdf', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'same-origin',
+    body: JSON.stringify(snapshot),
+  });
+
+  if (!res.ok) {
+    let detail = `HTTP ${res.status}`;
+    try {
+      const j = (await res.json()) as { error?: string };
+      if (j.error) detail = j.error;
+    } catch {
+      /* ignore */
+    }
+    throw new Error(detail);
+  }
+
+  return res.blob();
+}
+
+/**
+ * Fallback raster path (html2canvas). Only used if Chromium API is unavailable.
+ * Not pixel-identical to Preview — keep for offline/dev resilience only.
+ */
+async function exportViaHtml2Canvas(rootId = 'spec-sheet-print'): Promise<Blob> {
+  const source = document.getElementById(rootId);
+  if (!source) {
+    throw new Error('Spec sheet preview not found. Open the Preview tab once, then try again.');
+  }
+
+  const revealed = revealHiddenAncestors(source);
+  await waitForImages(source);
   await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
 
+  const host = document.createElement('div');
+  host.setAttribute('data-spec-sheet-capture-host', '1');
+  host.style.cssText = [
+    'position:fixed',
+    'left:0',
+    'top:0',
+    'width:' + SHEET_WIDTH_PX + 'px',
+    'z-index:2147483646',
+    'opacity:1',
+    'pointer-events:none',
+    'background:#ffffff',
+    'transform:translateX(-100vw)',
+  ].join(';');
+
+  const clone = source.cloneNode(true) as HTMLElement;
+  clone.id = `${rootId}-capture`;
+  clone.style.cssText = [
+    'width:' + SHEET_WIDTH_PX + 'px',
+    'min-height:' + SHEET_HEIGHT_PX + 'px',
+    'max-width:' + SHEET_WIDTH_PX + 'px',
+    'margin:0',
+    'box-shadow:none',
+    'border:none',
+    'background:#ffffff',
+    'opacity:1',
+    'transform:none',
+    'position:relative',
+    'display:block',
+  ].join(';');
+
+  clone.querySelectorAll('.print-page-head, .print-page-foot').forEach((el) => {
+    (el as HTMLElement).style.display = 'none';
+  });
+
+  const pad = clone.querySelector('.spec-sheet-pad') as HTMLElement | null;
+  if (pad) {
+    pad.style.setProperty('padding', `${SHEET_PAD_PX}px`, 'important');
+    pad.style.setProperty('box-sizing', 'border-box', 'important');
+    pad.style.setProperty('width', '100%', 'important');
+  }
+
+  host.appendChild(clone);
+  document.body.appendChild(host);
+
   try {
-    const canvas = await html2canvas(el, {
+    await waitForImages(clone);
+    await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+
+    const canvas = await html2canvas(clone, {
       scale: 2,
       useCORS: true,
       allowTaint: false,
       backgroundColor: '#ffffff',
       logging: false,
-      // Avoid capturing only the scrolled viewport of the tab.
-      windowWidth: el.scrollWidth,
-      windowHeight: el.scrollHeight,
+      width: SHEET_WIDTH_PX,
+      windowWidth: SHEET_WIDTH_PX,
+      scrollX: 0,
+      scrollY: 0,
+      x: 0,
+      y: 0,
     });
 
-    const imgData = canvas.toDataURL('image/jpeg', 0.92);
+    const imgData = canvas.toDataURL('image/png');
     const pdf = new jsPDF({ orientation: 'portrait', unit: 'in', format: 'letter' });
-    const imgWidth = LETTER_W_IN;
-    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+    const pageW = 8.5;
+    const pageH = 11;
+    const imgW = pageW;
+    const imgH = (canvas.height * imgW) / canvas.width;
 
-    let heightLeft = imgHeight;
+    let heightLeft = imgH;
     let position = 0;
 
-    pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
-    heightLeft -= LETTER_H_IN;
+    pdf.addImage(imgData, 'PNG', 0, position, imgW, imgH);
+    heightLeft -= pageH;
 
-    while (heightLeft > 0.01) {
-      position = heightLeft - imgHeight;
+    while (heightLeft > 0.02) {
+      position = heightLeft - imgH;
       pdf.addPage();
-      pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight);
-      heightLeft -= LETTER_H_IN;
+      pdf.addImage(imgData, 'PNG', 0, position, imgW, imgH);
+      heightLeft -= pageH;
     }
 
     return pdf.output('blob');
   } finally {
-    for (const n of hiddenAncestors) n.setAttribute('hidden', '');
+    host.remove();
+    restoreRevealed(revealed);
   }
+}
+
+/**
+ * Capture `#spec-sheet-print` into a US Letter PDF via Chromium print
+ * (guaranteed match to Chrome Preview / Save as PDF).
+ * No html2canvas fallback — that path diverges from Preview layout.
+ */
+export async function exportSpecSheetPdfBlob(
+  _rootId = 'spec-sheet-print'
+): Promise<Blob> {
+  return exportViaChromium();
+}
+
+/** Last-resort raster export (dev/debug only — layout may diverge from Preview). */
+export async function exportSpecSheetPdfBlobRasterFallback(
+  rootId = 'spec-sheet-print'
+): Promise<Blob> {
+  return exportViaHtml2Canvas(rootId);
 }
 
 export function specSheetPdfFileName(code: string): string {

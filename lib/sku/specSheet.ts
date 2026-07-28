@@ -8,9 +8,15 @@ import type { SkuState } from './skuRules';
 import { EMPTY_SKU_STATE, buildSku } from './skuRules';
 
 export interface ConfigRow {
+  /** Long/Short SKU — used for matching; not the primary UI label. */
   codigo: string;
+  /** Product / variant display name (first field in Builder + Spec Sheet). */
+  nombre?: string;
+  /** Short / commercial description (second field). */
   descripcion: string;
   componente: string;
+  /** Stable link to product_variants. */
+  variantId?: string;
 }
 
 export interface ColorRow {
@@ -205,7 +211,7 @@ export function createDefaultSpecSheet(): SpecSheetData {
     footerNote: '',
     photoUrl: '',
     diagramUrl: '',
-    configuraciones: [{ codigo: '', descripcion: '', componente: '' }],
+    configuraciones: [{ codigo: '', nombre: '', descripcion: '', componente: '' }],
     colores: [{ nombre: '', codigo: '' }],
     // Technical data starts empty on purpose: it is only for ADDITIONAL fields
     // that are not already derived from the SKU or the General data / Builder.
@@ -299,9 +305,11 @@ export function deriveIdentity(d: SpecSheetData): {
   description: string;
 } {
   const r = buildSku(d.sku);
+  // Long SKU is the unique identity (optic, CCT, CRI, watts, …). Short SKU alone
+  // collides when two variants share the same commercial stem (e.g. OP36 vs OP22).
   return {
     name: [d.productName.trim(), r.nameBody].filter(Boolean).join(' '),
-    code: r.shortCode,
+    code: (r.longCode || r.shortCode).trim(),
     codeDescription: r.shortDesc,
     description: composeAutoDescription(r.longDesc, d),
   };
@@ -386,11 +394,19 @@ export function normalizeSpecSheet(raw: Partial<SpecSheetData> | null | undefine
     ...raw,
     configuraciones:
       raw.configuraciones && raw.configuraciones.length
-        ? raw.configuraciones.map((c) => ({
-            codigo: c?.codigo ?? '',
-            descripcion: c?.descripcion ?? '',
-            componente: c?.componente ?? '',
-          }))
+        ? raw.configuraciones.map((c) => {
+            const row = c as ConfigRow & { variant_id?: string };
+            // Legacy sheets may carry showOnSpecSheet; it is dropped here on
+            // purpose. Every related row now prints, and the public site takes
+            // its Related Variants from the family instead of this list.
+            return {
+              codigo: row?.codigo ?? '',
+              nombre: row?.nombre ?? '',
+              descripcion: row?.descripcion ?? '',
+              componente: row?.componente ?? '',
+              variantId: row?.variantId || row?.variant_id || undefined,
+            };
+          })
         : base.configuraciones,
     colores:
       raw.colores && raw.colores.length

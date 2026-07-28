@@ -10,6 +10,7 @@ import { buildSku, skuColorName, skuDriverControlText, skuTrackName, skuProfileN
 import { cctRange, criValue, beamValue, wattsValue } from '@/lib/sku/mapToLuken';
 import type { ProductAsset } from '@/lib/types';
 import { getLatestAssetUrl } from '@/lib/assets';
+import { SHEET_HEIGHT_PX, SHEET_WIDTH_PX } from '@/lib/specsheet/sheetGeometry';
 
 function Placeholder({ children }: { children: React.ReactNode }) {
   return <span className="text-gray-300">{children}</span>;
@@ -35,8 +36,10 @@ export function SheetPreview({
   // Always derive from current SKU so Preview never shows a previous configuration.
   const identity = deriveIdentity(data);
   const title = identity.name || data.productName;
-  const code = identity.code || r.shortCode;
-  const codeDescription = identity.codeDescription;
+  // CODE bar = Short SKU (commercial stem). Grey box = Long SKU (unique config).
+  const shortCode = (r.shortCode || '').trim();
+  const longCode = (r.longCode || shortCode || identity.code || '').trim();
+  const code = shortCode;
   const description = identity.description;
   const colorName = skuColorName(data.sku.color);
   const driverControl = skuDriverControlText(data.sku);
@@ -137,7 +140,10 @@ export function SheetPreview({
     (t) => !derivedKeys.has(norm(t.campo)) && t.campo.trim().toLowerCase() !== lumenCampo
   );
   const techRows: TechRow[] = [...derivedTech, ...manualExtra];
-  const configRows = data.configuraciones.filter((c) => c.codigo || c.descripcion || c.componente);
+  // Spec Sheet “Related Product” — every row with content prints.
+  const configRows = data.configuraciones.filter(
+    (c) => c.nombre || c.codigo || c.descripcion || c.componente
+  );
   const overviewLines = (familyOverview || '')
     .split('\n')
     .map((l) => l.trim())
@@ -146,30 +152,36 @@ export function SheetPreview({
   return (
     <div
       id="spec-sheet-print"
-      className="spec-sheet mx-auto bg-white shadow-lg border border-gray-200 w-[8.5in] min-h-[11in]"
+      className="spec-sheet mx-auto bg-white shadow-lg border border-gray-200"
+      style={{ width: SHEET_WIDTH_PX, minHeight: SHEET_HEIGHT_PX }}
     >
-      {/* Content is wrapped in a table so the spacer thead/tfoot repeat on every
-          printed page, giving a consistent top/bottom margin across pages while
-          @page margin stays 0 (no browser header/footer). */}
-      <table className="print-page-table w-full border-collapse">
+      {/* Same pixel grid as the PDF exporter (816×1056 @ 96dpi). Padding lives on
+          .spec-sheet-pad so Preview and the downloaded datasheet stay identical.
+          thead/tfoot spacers only appear when printing (every page top/bottom). */}
+      <table className="print-page-table">
         <thead className="print-page-head hidden print:table-header-group">
           <tr>
             <td>
-              <div className="h-[0.5in]" />
+              <div className="print-page-spacer" aria-hidden />
             </td>
           </tr>
         </thead>
         <tbody>
           <tr>
-            <td className="align-top px-[0.5in] pt-[0.5in] pb-[0.5in] print:py-0">
+            <td className="align-top p-0">
+              <div className="spec-sheet-pad">
               <div className="space-y-5 text-[11px] leading-relaxed text-gray-800">
         {/* Header: image + logo, then full-width code bar (CODE flush right + padding) */}
         <div className="break-inside-avoid space-y-0">
-          <div className="flex items-start gap-4">
-            <div className="w-[38%] max-w-[220px] aspect-square shrink-0 bg-white border border-gray-200 flex items-center justify-center overflow-hidden">
+          <div className="spec-sheet-header-row flex items-start gap-4">
+            <div className="spec-sheet-product-frame w-[38%] max-w-[220px] aspect-square shrink-0 bg-white border border-gray-200 flex items-center justify-center overflow-hidden">
               {mainImage ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={mainImage} alt={title} className="h-full w-full object-contain" />
+                <img
+                  src={mainImage}
+                  alt={title}
+                  className="spec-sheet-product-img h-full w-full object-contain"
+                />
               ) : (
                 <span className="text-gray-300 text-[10px] uppercase tracking-widest text-center px-2">Product image</span>
               )}
@@ -177,14 +189,18 @@ export function SheetPreview({
             <div className="flex-1 flex justify-end items-start min-w-0 pt-1">
               {brandLogoUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={brandLogoUrl} alt="Brand logo" className="max-h-12 max-w-[200px] object-contain" />
+                <img
+                  src={brandLogoUrl}
+                  alt="Brand logo"
+                  className="spec-sheet-logo-img max-h-12 max-w-[200px] object-contain"
+                />
               ) : (
                 <span className="text-3xl font-light tracking-tight">Luken</span>
               )}
             </div>
           </div>
-          {/* Black bar: full width, CODE always right-aligned with side padding (ref) */}
-          <div className="mt-3 flex h-7 items-center justify-end bg-gray-900 px-3">
+          {/* Black bar: full width of content column (inside page pad), CODE right */}
+          <div className="spec-sheet-code-bar mt-3 flex h-7 items-center justify-end bg-gray-900 px-3">
             <span className="font-mono text-[11px] leading-none text-white truncate max-w-full text-right">
               {code ? `CODE: ${code}` : 'CODE'}
             </span>
@@ -213,10 +229,12 @@ export function SheetPreview({
           )}
         </div>
 
-        {/* Name box (the SKU code itself lives in the black CODE bar above) */}
+        {/* Product name on top; Long SKU below (smaller, light gray) */}
         <div className="bg-gray-50 border border-gray-200 p-3">
           <div className="text-sm font-medium text-gray-900">{title || <Placeholder>—</Placeholder>}</div>
-          <div className="text-gray-600">{codeDescription || <Placeholder>—</Placeholder>}</div>
+          <div className="mt-0.5 font-mono text-[11px] text-gray-500 break-all">
+            {longCode || <Placeholder>—</Placeholder>}
+          </div>
         </div>
 
         {/* Description */}
@@ -227,16 +245,16 @@ export function SheetPreview({
           <p>{description || <Placeholder>—</Placeholder>}</p>
         </section>
 
-        {/* Related variants (hidden when there are none) */}
+        {/* Related Product on ficha (hidden when none opted in) */}
         {configRows.length > 0 && (
           <section>
             <h2 className="text-[10px] font-semibold uppercase tracking-widest text-gray-500 border-b border-gray-300 pb-1 mb-2">
-              Related Variant
+              Related Product
             </h2>
             <table className="w-full">
               <thead>
                 <tr className="text-[9px] uppercase tracking-wide text-gray-400 text-left">
-                  <th className="py-1 pr-2 font-medium">Code</th>
+                  <th className="py-1 pr-2 font-medium">Name</th>
                   <th className="py-1 pr-2 font-medium">Description</th>
                   <th className="py-1 font-medium">Component</th>
                 </tr>
@@ -244,7 +262,14 @@ export function SheetPreview({
               <tbody>
                 {configRows.map((c, i) => (
                   <tr key={i} className="border-t border-gray-100 align-top">
-                    <td className="py-1 pr-2 font-mono">{c.codigo}</td>
+                    <td className="py-1 pr-2">
+                      {(() => {
+                        const n = (c.nombre || '').trim();
+                        // Prefer Identity Name (has spaces); never show a raw SKU as Name.
+                        if (n && /\s/.test(n)) return n;
+                        return '—';
+                      })()}
+                    </td>
                     <td className="py-1 pr-2">{c.descripcion}</td>
                     <td className="py-1">{c.componente}</td>
                   </tr>
@@ -279,7 +304,7 @@ export function SheetPreview({
             <h2 className="text-[10px] font-semibold uppercase tracking-widest text-gray-500 border-b border-gray-300 pb-1 mb-2">
               Dimensions
             </h2>
-            <div className="w-full bg-white border border-gray-200 flex items-center justify-center overflow-hidden p-2">
+            <div className="break-inside-avoid w-full bg-white border border-gray-200 flex items-center justify-center overflow-hidden p-2">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={dimensionsImage} alt="Dimensions" className="max-h-[220px] w-auto object-contain" />
             </div>
@@ -294,7 +319,10 @@ export function SheetPreview({
             </h2>
             <div className="grid grid-cols-2 gap-x-8">
               {techRows.map((t, i) => (
-                <div key={i} className="flex justify-between gap-3 border-b border-gray-100 py-1">
+                <div
+                  key={i}
+                  className="break-inside-avoid flex justify-between gap-3 border-b border-gray-100 py-1"
+                >
                   <span className="text-gray-600">{t.campo}</span>
                   <span className="text-right">
                     {t.valor || '—'} {t.unidad && t.unidad !== '-' ? t.unidad : ''}
@@ -312,7 +340,7 @@ export function SheetPreview({
               Photometry
             </h2>
             <div className="flex justify-start">
-              <div className="bg-white border border-gray-200 overflow-hidden p-2">
+              <div className="break-inside-avoid bg-white border border-gray-200 overflow-hidden p-2">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={photometryImage} alt="Photometry" className="max-h-[180px] w-auto object-contain" />
               </div>
@@ -344,13 +372,14 @@ export function SheetPreview({
           </section>
         )}
               </div>
+              </div>
             </td>
           </tr>
         </tbody>
         <tfoot className="print-page-foot hidden print:table-footer-group">
           <tr>
             <td>
-              <div className="h-[0.5in]" />
+              <div className="print-page-spacer" aria-hidden />
             </td>
           </tr>
         </tfoot>

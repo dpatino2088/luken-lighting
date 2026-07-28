@@ -1,9 +1,8 @@
 'use client';
 
 import { useState, useMemo, Fragment } from 'react';
-import Link from 'next/link';
-import { Search, Eye, Edit, ImageOff, ChevronLeft, ChevronRight } from 'lucide-react';
-import { DeleteVariantButton } from './DeleteVariantButton';
+import { Search, ImageOff, ChevronLeft, ChevronRight } from 'lucide-react';
+import { VariantActionsMenu } from './VariantActionsMenu';
 import { calcMsrp, formatUsd } from '@/lib/pricing';
 
 interface AssetSlim {
@@ -70,6 +69,7 @@ export function AdminVariantsTable({ variants, categories, products }: Props) {
         (v) =>
           v.name.toLowerCase().includes(q) ||
           v.code.toLowerCase().includes(q) ||
+          (v.product?.name && v.product.name.toLowerCase().includes(q)) ||
           (v.manufacturer && v.manufacturer.toLowerCase().includes(q)) ||
           (v.manufacturer_sku && v.manufacturer_sku.toLowerCase().includes(q))
       );
@@ -175,7 +175,7 @@ export function AdminVariantsTable({ variants, categories, products }: Props) {
                 <th className="px-3 py-2 text-right text-[10px] font-medium uppercase tracking-wider text-gray-500">Dist.</th>
                 <th className="px-3 py-2 text-right text-[10px] font-medium uppercase tracking-wider text-gray-500">MSRP</th>
                 <th className="px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wider text-gray-500">Status</th>
-                <th className="px-3 py-2 w-24"></th>
+                <th className="px-3 py-2 text-right text-[10px] font-medium uppercase tracking-wider text-gray-500">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -208,10 +208,13 @@ export function AdminVariantsTable({ variants, categories, products }: Props) {
                       )}
                     </td>
                     <td className="px-3 py-1.5">
-                      <p className="text-xs font-medium text-gray-900 leading-tight">{variant.code}</p>
-                      <p className="text-[10px] text-gray-400">{variant.category?.name || ''}</p>
+                      <p className="text-xs font-medium text-gray-900 leading-tight">
+                        {variant.name || variant.product?.name || '—'}
+                      </p>
                     </td>
-                    <td className="px-3 py-1.5 text-xs text-gray-600 font-mono">{variant.code}</td>
+                    <td className="px-3 py-1.5 text-xs text-gray-600 font-mono break-all max-w-[280px]">
+                      {variant.code}
+                    </td>
                     <td className="px-3 py-1.5 text-xs text-gray-500">{variant.manufacturer || '—'}</td>
                     <td className="px-3 py-1.5 text-xs text-gray-500 font-mono">{variant.manufacturer_sku || '—'}</td>
                     <td className="px-3 py-1.5 text-xs text-gray-500 text-right tabular-nums">
@@ -235,16 +238,17 @@ export function AdminVariantsTable({ variants, categories, products }: Props) {
                         )}
                       </div>
                     </td>
-                    <td className="px-3 py-1.5">
-                      <div className="flex items-center justify-end gap-1">
-                        <Link href={variant.product?.slug ? `/products/${variant.product.slug}/${variant.slug}` : '#'} target="_blank" className="p-1 text-gray-400 hover:text-gray-700" title="View on site">
-                          <Eye className="w-3.5 h-3.5" />
-                        </Link>
-                        <Link href={`/admin/variants/${variant.id}`} className="p-1 text-gray-400 hover:text-gray-700" title="Edit">
-                          <Edit className="w-3.5 h-3.5" />
-                        </Link>
-                        <DeleteVariantButton variantId={variant.id} variantName={variant.code} />
-                      </div>
+                    <td className="px-3 py-1.5 text-right">
+                      <VariantActionsMenu
+                        variantId={variant.id}
+                        variantCode={variant.code}
+                        isActive={variant.is_active}
+                        viewHref={
+                          variant.product?.slug
+                            ? `/products/${variant.product.slug}/${variant.slug}`
+                            : undefined
+                        }
+                      />
                     </td>
                   </tr>
                   </Fragment>

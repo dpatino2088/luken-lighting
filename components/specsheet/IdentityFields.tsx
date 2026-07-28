@@ -26,8 +26,14 @@ export function IdentityFields({ data, sync }: { data: SpecSheetData; sync: Spec
         <div>
           <h2 className="text-lg font-medium uppercase tracking-wide">Identity</h2>
           <p className="mt-0.5 text-[11px] text-gray-500">
-            Generated in the Builder. Editing a field by hand switches it to manual and stops the sync. SKU:{' '}
+            Generated in the Builder (Long SKU = unique code). Editing by hand stops the sync. Short:{' '}
             <span className="font-mono">{skuPreview.shortCode || '—'}</span>
+            {skuPreview.longCode ? (
+              <>
+                {' '}
+                · Long: <span className="font-mono">{skuPreview.longCode}</span>
+              </>
+            ) : null}
           </p>
         </div>
         <button

@@ -1,12 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { ArrowLeft, Eye, Save, Printer } from 'lucide-react';
+import { getLatestAssetUrl } from '@/lib/assets';
 import { Button } from '@/components/ui/Button';
 import { VariantEditForm } from '@/components/admin/VariantEditForm';
 import { FileUploadSection } from '@/components/admin/FileUploadSection';
+import { VariantActionsMenu } from '@/components/admin/VariantActionsMenu';
 import { VariantBuilderPanel } from '@/components/specsheet/VariantBuilderPanel';
 import { IdentityFields } from '@/components/specsheet/IdentityFields';
 import { useSpecSheetSync } from '@/components/specsheet/useSpecSheetSync';
@@ -14,6 +16,7 @@ import { SheetPreview } from '@/components/specsheet/SheetPreview';
 import { buildSku } from '@/lib/sku/skuRules';
 import { saveVariantBuilder, updateVariant } from '@/app/(admin)/admin/variants/actions';
 import { uploadSpecSheetPdfFromPreview } from '@/lib/specsheet/uploadSpecSheetPdf';
+import { SHEET_WIDTH_PX } from '@/lib/specsheet/sheetGeometry';
 import { toast } from '@/components/ui/Toast';
 import type { ProductVariant, ProductCategory, Product, ProductAsset, AppSettings } from '@/lib/types';
 import {
@@ -25,6 +28,33 @@ import {
 import { AdminSelect } from '@/components/ui/AdminSelect';
 
 type Tab = 'builder' | 'product' | 'files' | 'preview';
+
+/** Asset slots the Spec Sheet renders — a new upload changes the PDF. */
+const SHEET_IMAGE_TYPES = ['image', 'photometric_image', 'dimensions_image'];
+
+/**
+ * Fingerprint of everything the Spec Sheet renders. Save compares it against the
+ * state captured at the last PDF generation and skips Chromium when nothing
+ * changed, since regenerating on every Save made saving slow.
+ *
+ * `lastUpdate` is excluded on purpose: the save action bumps it every time, which
+ * would leave the sheet looking permanently changed.
+ */
+function sheetSignature(
+  sheet: SpecSheetData,
+  assets: ProductAsset[],
+  brandLogoUrl: string | null | undefined,
+  familyOverview: string | null | undefined
+): string {
+  const { lastUpdate, ...content } = sheet;
+  void lastUpdate;
+  return JSON.stringify({
+    content,
+    images: SHEET_IMAGE_TYPES.map((type) => getLatestAssetUrl(assets, type) || ''),
+    brandLogoUrl: brandLogoUrl || '',
+    familyOverview: familyOverview || '',
+  });
+}
 
 const topTabBtn = (active: boolean) =>
   'px-4 py-2 text-sm font-medium uppercase tracking-wide border-b-2 transition-colors ' +
@@ -57,10 +87,35 @@ export function VariantEditTabs({
   const [productId, setProductId] = useState(variant.product_id || '');
   const [categoryId, setCategoryId] = useState(variant.category_id || '');
   const [environment, setEnvironment] = useState(variant.environment || '');
+  // Local assets so Save replaces the datasheet slot immediately in File & Assets.
+  const [liveAssets, setLiveAssets] = useState<ProductAsset[]>(assets);
+  useEffect(() => {
+    setLiveAssets(assets);
+  }, [assets]);
 
+  const [pdfBusy, setPdfBusy] = useState(false);
   const product = products.find((p) => p.id === productId);
-  // Live from Builder — never show the stale DB code while editing.
-  const liveCode = (data.code || buildSku(data.sku).shortCode || variant.code || '').trim();
+  const familyOverview = product?.description;
+  const currentSignature = sheetSignature(
+    data,
+    liveAssets,
+    settings.brand_logo_url,
+    familyOverview
+  );
+  const hasDatasheet = liveAssets.some((a) => a.type === 'datasheet' && a.file_url);
+  // Baseline = sheet state behind the stored PDF. Seeded on first render from the
+  // saved data, so opening a variant and hitting Save does not rebuild the PDF.
+  const pdfBaselineRef = useRef<string | null>(null);
+  if (pdfBaselineRef.current === null) pdfBaselineRef.current = currentSignature;
+  const pdfOutdated = !hasDatasheet || currentSignature !== pdfBaselineRef.current;
+
+  // Live from Builder — name leads; Short/Long SKU sit under it.
+  const liveBuilt = buildSku(data.sku);
+  const liveShortCode = (liveBuilt.shortCode || '').trim();
+  const liveLongCode = (liveBuilt.longCode || liveShortCode || data.code || variant.code || '').trim();
+  const liveCode = liveLongCode;
+  // Family / product name leads the page — not the Long SKU.
+  const liveTitle = (data.productName || product?.name || data.name || variant.name || 'Variant').trim();
   const viewHref = product?.slug ? `/products/${product.slug}/${variant.slug}` : '#';
 
   // Keep sheet productName + SKU series aligned with the selected family even when
@@ -74,56 +129,65 @@ export function VariantEditTabs({
     });
   }, [productId, product]);
 
-  async function syncDatasheetPdf(okMessage: string, sheet: SpecSheetData = data) {
-    const code = (sheet.code || buildSku(sheet.sku).shortCode || variant.code || '').trim();
-    // Give React a tick so lastUpdate / identity fields are painted on the Preview.
-    await new Promise((r) => setTimeout(r, 80));
+  /** Regenerate datasheet from Preview → replace bucket object + product_assets row. */
+  async function syncDatasheetPdf(sheet: SpecSheetData = data): Promise<boolean> {
+    const code = (
+      sheet.code ||
+      buildSku(sheet.sku).longCode ||
+      buildSku(sheet.sku).shortCode ||
+      variant.code ||
+      ''
+    ).trim();
+    // Ensure Preview DOM is painted before Chromium serializes it.
+    const prevTab = tab;
+    setTab('preview');
+    await new Promise((r) => setTimeout(r, 350));
     try {
       const pdf = await uploadSpecSheetPdfFromPreview(variant.id, code);
       if (pdf.error) {
         toast.error(`Saved, but Spec Sheet PDF failed: ${pdf.error}`);
-        return;
+        setTab(prevTab);
+        return false;
       }
-      toast.success(okMessage);
+      if (pdf.asset) {
+        setLiveAssets((prev) => [...prev.filter((a) => a.type !== 'datasheet'), pdf.asset!]);
+      }
+      pdfBaselineRef.current = sheetSignature(
+        sheet,
+        liveAssets,
+        settings.brand_logo_url,
+        familyOverview
+      );
+      setTab(prevTab);
+      return true;
     } catch (err) {
       toast.error(
         `Saved, but Spec Sheet PDF failed: ${err instanceof Error ? err.message : 'unknown error'}`
       );
+      setTab(prevTab);
+      return false;
     }
   }
 
-  async function handleSaveBuilder() {
-    setSaving(true);
-    // Force identity from current SKU before persist + PDF (no stale previous code).
-    const synced = syncIdentityFromSku(data);
-    setData(synced);
-    const result = await saveVariantBuilder(variant.id, synced, {
-      product_id: productId || null,
-      category_id: categoryId || null,
-      environment: environment || null,
-    });
-    if (result.error) {
-      toast.error(result.error);
-      setSaving(false);
-      return;
-    }
-    if (result.lastUpdate) {
-      setData((prev) => ({ ...prev, lastUpdate: result.lastUpdate! }));
-    }
-    await syncDatasheetPdf('Builder saved · Spec Sheet PDF updated.', synced);
+  /** Force a datasheet rebuild from the current Preview (PDF slot in File & Assets). */
+  async function handleUpdatePdf() {
+    setPdfBusy(true);
+    const ok = await syncDatasheetPdf(data);
+    if (ok) toast.success('Spec Sheet PDF updated.');
     router.refresh();
-    setSaving(false);
+    setPdfBusy(false);
   }
 
-  // The Product tab shows the built Identity (name / code / descriptions) AND
-  // the Manufacturer / Pricing / Status form. "Save changes" must persist BOTH:
-  // the identity + spec sheet (owned by the Builder data) and the pricing form.
-  // Otherwise identity edits made here silently revert on reload.
-  async function handleSaveProduct() {
+  /**
+   * Always-available Save: Builder identity + pricing form (if mounted). The
+   * datasheet PDF is rebuilt only when the sheet actually changed — Chromium is
+   * the slow part of saving, and most saves do not touch the sheet.
+   */
+  async function handleSave() {
     setSaving(true);
-
     const synced = syncIdentityFromSku(data);
     setData(synced);
+
     const identity = await saveVariantBuilder(variant.id, synced, {
       product_id: productId || null,
       category_id: categoryId || null,
@@ -148,7 +212,21 @@ export function VariantEditTabs({
       }
     }
 
-    await syncDatasheetPdf('Product saved · Spec Sheet PDF updated.', synced);
+    const nextSignature = sheetSignature(
+      synced,
+      liveAssets,
+      settings.brand_logo_url,
+      familyOverview
+    );
+    if (hasDatasheet && nextSignature === pdfBaselineRef.current) {
+      toast.success('Saved · Spec Sheet unchanged, PDF kept.');
+      router.refresh();
+      setSaving(false);
+      return;
+    }
+
+    const pdfOk = await syncDatasheetPdf(synced);
+    if (pdfOk) toast.success('Saved · Spec Sheet PDF updated.');
     router.refresh();
     setSaving(false);
   }
@@ -175,40 +253,55 @@ export function VariantEditTabs({
     <div className="h-full flex flex-col">
       {/* Toolbar: fixed flex item (does not scroll); only the content area below scrolls */}
       <div className="shrink-0 bg-white border-b border-gray-200 pb-3">
-        <div className="flex items-center justify-between">
-          <div>
-            <Link href="/admin/variants" className="inline-flex items-center text-sm text-gray-600 hover:text-gray-900 mb-2">
-              <ArrowLeft className="w-4 h-4 mr-1" />
-              Back to Variants
-            </Link>
-            <h1 className="text-3xl font-light tracking-widest uppercase">{liveCode || '—'}</h1>
+        <Link
+          href="/admin/variants"
+          className="inline-flex items-center text-sm text-gray-600 hover:text-gray-900 mb-3"
+        >
+          <ArrowLeft className="w-4 h-4 mr-1" />
+          Back to Variants
+        </Link>
+
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0 flex-1">
+            <h1 className="text-3xl font-light tracking-widest uppercase text-gray-900 truncate">
+              {liveTitle}
+            </h1>
+            {liveShortCode ? (
+              <p className="mt-1 font-mono text-sm text-gray-700 truncate">{liveShortCode}</p>
+            ) : null}
+            {liveLongCode && liveLongCode !== liveShortCode ? (
+              <p className="mt-0.5 font-mono text-[11px] text-gray-400 break-all leading-snug">
+                {liveLongCode}
+              </p>
+            ) : null}
           </div>
-          <div className="flex items-center gap-3">
-            {tab === 'builder' && (
-              <Button type="button" variant="primary" size="sm" onClick={handleSaveBuilder} disabled={saving}>
-                <Save className="w-4 h-4 mr-2" />
-                {saving ? 'Saving...' : 'Save builder'}
-              </Button>
-            )}
-            {tab === 'product' && (
-              <Button type="button" variant="primary" size="sm" onClick={handleSaveProduct} disabled={saving}>
-                <Save className="w-4 h-4 mr-2" />
-                {saving ? 'Saving...' : 'Save changes'}
-              </Button>
-            )}
-            <Button type="button" variant="secondary" size="sm" onClick={handlePrint}>
+
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <Button type="button" variant="primary" size="sm" onClick={handleSave} disabled={saving}>
+              <Save className="w-4 h-4 mr-2" />
+              {saving ? 'Saving…' : 'Save'}
+            </Button>
+            <Button type="button" variant="secondary" size="sm" onClick={handlePrint} disabled={saving}>
               <Printer className="w-4 h-4 mr-2" />
-              Print / PDF
+              Print
             </Button>
             <Link href={viewHref} target="_blank">
-              <Button type="button" variant="secondary" size="sm">
+              <Button type="button" variant="secondary" size="sm" disabled={saving}>
                 <Eye className="w-4 h-4 mr-2" />
-                View on Site
+                View
               </Button>
             </Link>
+            <VariantActionsMenu
+              variantId={variant.id}
+              variantCode={liveShortCode || liveCode || variant.code}
+              isActive={variant.is_active}
+              viewHref={viewHref !== '#' ? viewHref : undefined}
+              compact={false}
+            />
           </div>
         </div>
-        <div className="mt-3 flex flex-wrap gap-2">
+
+        <div className="mt-4 flex flex-wrap gap-2 border-t border-gray-100 pt-3">
           <button type="button" onClick={() => setTab('builder')} className={topTabBtn(tab === 'builder')}>
             Builder
           </button>
@@ -229,8 +322,9 @@ export function VariantEditTabs({
       {/* Builder */}
       <div hidden={tab !== 'builder'} className="space-y-4">
         <p className="text-[11px] text-gray-500">
-          Generates the SKU, descriptions and the technical sheet. Saving here updates the variant code, name and
-          descriptions (+ the spec sheet). Pricing and files live in the <strong>Product</strong> / <strong>File &amp; Assets</strong> tabs.
+          Generates the SKU, descriptions and the technical sheet. <strong>Save</strong> updates the variant
+          and rebuilds the public Spec Sheet PDF only when the sheet changed. Pricing and files live in the{' '}
+          <strong>Product</strong> / <strong>File &amp; Assets</strong> tabs.
         </p>
 
         {/* Belongs to (family) — same as the create flow; saved with "Save builder" */}
@@ -320,25 +414,33 @@ export function VariantEditTabs({
         </h2>
         <p className="text-[11px] text-gray-500">
           Manuals, IES/photometric files, drawings, BIM and product images. Uploads save immediately.
-          The <strong>Spec Sheet / Datasheet (PDF)</strong> is auto-generated from Preview whenever you
-          save the Builder or Product tab.
+          The <strong>Spec Sheet / Datasheet (PDF)</strong> is generated from Preview and rebuilt on{' '}
+          <strong>Save</strong> whenever the sheet changed — use <strong>Update PDF</strong> to force a
+          rebuild. The old file is replaced in storage, so the public site always links the newest.
         </p>
-        <FileUploadSection productId={variant.id} assets={assets} />
+        <FileUploadSection
+          productId={variant.id}
+          assets={liveAssets}
+          onUpdateDatasheet={handleUpdatePdf}
+          datasheetBusy={pdfBusy || saving}
+          datasheetOutdated={pdfOutdated}
+        />
       </div>
 
-      {/* Preview — kept laid out off-screen when inactive so Save can export PDF
-          without flashing the tab (html2canvas needs real dimensions). */}
+      {/* Preview — kept laid out off-screen when inactive so Save can serialize
+          the same DOM Chromium prints to PDF. */}
       <div
         className={
           tab === 'preview'
-            ? 'bg-white p-4 border border-gray-200 overflow-x-auto'
-            : 'fixed left-[-120vw] top-0 w-[8.5in] pointer-events-none opacity-0'
+            ? 'bg-gray-100 p-6 border border-gray-200 overflow-x-auto'
+            : 'fixed left-[-120vw] top-0 pointer-events-none opacity-0'
         }
+        style={tab === 'preview' ? undefined : { width: SHEET_WIDTH_PX }}
         aria-hidden={tab !== 'preview'}
       >
         <SheetPreview
           data={data}
-          assets={assets}
+          assets={liveAssets}
           brandLogoUrl={settings.brand_logo_url}
           familyOverview={product?.description}
         />

@@ -167,8 +167,8 @@ export function VariantEditForm({
           </div>
 
           <PricingFields
-            initialCostUsd={variant.cost_usd}
-            initialDistributorPrice={variant.distributor_price}
+            initialCostUsd={variant.cost_usd ?? null}
+            initialDistributorPrice={variant.distributor_price ?? null}
             eurToUsdRate={settings.eur_to_usd_rate}
             costName="cost_usd"
             priceName="distributor_price"

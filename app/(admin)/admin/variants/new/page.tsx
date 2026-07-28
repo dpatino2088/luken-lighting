@@ -87,7 +87,7 @@ export default function NewVariantPage() {
       setTopTab('builder');
       return;
     }
-    if (!skuPreview.shortCode) {
+    if (!skuPreview.longCode && !skuPreview.shortCode) {
       toast.error('Complete the SKU generator (at least the Series) to generate a code.');
       setTopTab('builder');
       return;
@@ -99,7 +99,8 @@ export default function NewVariantPage() {
       if (!supabase) throw new Error('Supabase not configured');
 
       const vf = specSheetToVariantFields(data, effectiveEnvironment);
-      const slug = slugify(vf.code) || slugify(vf.name);
+      // Long SKU is the unique code/slug (optic, CCT, color, …).
+      const slug = slugify(vf.code) || slugify(skuPreview.longCode || skuPreview.shortCode) || slugify(vf.name);
 
       const { data: variant, error: vErr } = await supabase
         .from('product_variants')
@@ -280,7 +281,7 @@ export default function NewVariantPage() {
       </div>
 
       {/* Preview tab */}
-      <div hidden={topTab !== 'preview'} className="bg-white p-4 border border-gray-200 overflow-x-auto">
+      <div hidden={topTab !== 'preview'} className="bg-gray-100 p-6 border border-gray-200 overflow-x-auto">
         <SheetPreview data={data} brandLogoUrl={brandLogoUrl} familyOverview={selectedProduct?.description} />
       </div>
 

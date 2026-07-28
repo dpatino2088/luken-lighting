@@ -22,14 +22,33 @@
   }
 }
 
+/* Spec sheet — shared page padding for Preview + Print + html2canvas PDF.
+   Use px (not `in` on table cells): html2canvas and some table layouts drop
+   td padding in `in`, which made the exported datasheet flush to the edges.
+   48px = 0.5in at 96dpi — same visual margin on screen and in the PDF. */
+.spec-sheet {
+  box-sizing: border-box;
+}
+.spec-sheet .print-page-table {
+  width: 100%;
+  border-collapse: collapse;
+  border-spacing: 0;
+}
+.spec-sheet .spec-sheet-pad {
+  box-sizing: border-box !important;
+  padding: 48px !important; /* 0.5in — must match SHEET_PAD_PX */
+  width: 100%;
+}
+.spec-sheet .print-page-spacer {
+  height: 48px; /* matches .spec-sheet-pad vertical inset */
+  line-height: 48px;
+  overflow: hidden;
+}
+
 /* Spec sheet printing (Chrome print engine → Save as PDF).
-   The sheet is a US Letter page. We keep @page margin: 0 so the browser does NOT
-   print its own header/footer (date, document title, URL, page numbers). The
-   per-page top/bottom margins are instead provided by a spacer <thead>/<tfoot>
-   inside #spec-sheet-print (`.print-page-table`): the browser repeats and
-   reserves table header/footer groups on EVERY printed page, so page 2+ keeps a
-   consistent top margin. Left/right margins come from the cell padding. This is
-   what the on-screen preview reproduces, so Preview == PDF (WYSIWYG). */
+   @page margin: 0 avoids browser chrome (date/URL). Per-page top/bottom
+   margins come from repeating thead/tfoot spacers; left/right from
+   .spec-sheet-pad. Preview uses the same pad so Preview == PDF. */
 @page {
   size: letter; /* 8.5in x 11in */
   margin: 0;
@@ -68,18 +87,48 @@
 
   /* Repeat + reserve the top/bottom margin spacers on every page. */
   #spec-sheet-print .print-page-head {
-    display: table-header-group;
+    display: table-header-group !important;
   }
   #spec-sheet-print .print-page-foot {
-    display: table-footer-group;
+    display: table-footer-group !important;
   }
 
-  /* Keep logical blocks intact across page breaks; only break between them. */
-  #spec-sheet-print section,
+  /* Vertical inset is handled by thead/tfoot on every printed page. */
+  #spec-sheet-print .spec-sheet-pad {
+    padding-top: 0 !important;
+    padding-bottom: 0 !important;
+    padding-left: 48px !important;
+    padding-right: 48px !important;
+  }
+
+  /* Long sections (General / Technical data) must flow across pages. Keeping
+     whole sections together pushed them down entirely and left a big blank gap
+     at the bottom of the previous page. */
+  #spec-sheet-print section {
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+
+  /* A heading never sits alone at the foot of a page. */
   #spec-sheet-print h1,
   #spec-sheet-print h2 {
     break-inside: avoid;
     page-break-inside: avoid;
+    break-after: avoid;
+    page-break-after: avoid;
+  }
+
+  /* Atomic units: break between them, never through one. */
+  #spec-sheet-print tr,
+  #spec-sheet-print img,
+  #spec-sheet-print .break-inside-avoid {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  #spec-sheet-print p {
+    orphans: 2;
+    widows: 2;
   }
 
   /* The content table itself may span pages; its rows stay whole. */

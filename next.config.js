@@ -24,6 +24,8 @@ const nextConfig = {
     serverActions: {
       bodySizeLimit: '10mb',
     },
+    // Keep Chromium binaries out of the webpack bundle (API route loads them at runtime).
+    serverComponentsExternalPackages: ['@sparticuz/chromium', 'puppeteer-core'],
   },
 }
 

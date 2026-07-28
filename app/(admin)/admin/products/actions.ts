@@ -102,7 +102,8 @@ async function cascadeProductRename(
     if (link.codeDescription !== false) data.codeDescription = derived.codeDescription;
     if (link.description !== false) data.description = derived.description;
 
-    const code = (data.code || buildSku(data.sku).shortCode).trim();
+    const built = buildSku(data.sku);
+    const code = (data.code || built.longCode || built.shortCode).trim();
     const name = (data.name || data.productName).trim() || code;
 
     await supabase
@@ -115,7 +116,6 @@ async function cascadeProductRename(
       .update({
         code,
         name,
-        slug: slugify(code),
         short_description: data.codeDescription || null,
         long_description: data.description || null,
       })

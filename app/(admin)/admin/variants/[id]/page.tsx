@@ -27,7 +27,11 @@ export default async function EditVariantPage({ params }: Props) {
     supabase.from('product_variants').select('*').eq('id', id).single(),
     supabase.from('product_categories').select('*').order('sort_order'),
     supabase.from('products').select('*').order('name'),
-    supabase.from('product_assets').select('*').eq('variant_id', id).order('type').order('sort_order'),
+    supabase
+      .from('product_assets')
+      .select('*')
+      .eq('variant_id', id)
+      .order('created_at', { ascending: false }),
     supabase
       .from('spec_sheets')
       .select('*')

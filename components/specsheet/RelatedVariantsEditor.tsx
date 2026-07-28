@@ -2,7 +2,11 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { componentFromType, SUBCATEGORY_OPTIONS, type ConfigRow } from '@/lib/sku/specSheet';
+import {
+  componentFromType,
+  SUBCATEGORY_OPTIONS,
+  type ConfigRow,
+} from '@/lib/sku/specSheet';
 import { AdminSelect } from '@/components/ui/AdminSelect';
 
 const fieldClass =
@@ -31,13 +35,51 @@ function suggestComponent(v: Pick<FamilyVariant, 'subcategory'>): string {
 function rowFromVariant(v: FamilyVariant): ConfigRow {
   return {
     codigo: v.code || '',
-    descripcion: (v.short_description || v.name || '').trim(),
+    nombre: (v.name || '').trim(),
+    descripcion: (v.short_description || '').trim(),
     componente: suggestComponent(v),
+    variantId: v.id,
   };
 }
 
 function isEmptyRow(r: ConfigRow) {
-  return !r.codigo.trim() && !r.descripcion.trim() && !r.componente.trim();
+  return (
+    !r.codigo.trim() &&
+    !(r.nombre || '').trim() &&
+    !r.descripcion.trim() &&
+    !r.componente.trim()
+  );
+}
+
+/** True when a stored "nombre" is actually a SKU/code, not the Identity Name. */
+function looksLikeSku(value: string): boolean {
+  const v = value.trim();
+  if (!v) return true;
+  // e.g. SAN-5DOT-REC-LED-MOD-TRM-WH/BK or full Long SKU
+  return /^[A-Z0-9]+(-[A-Z0-9./]+)+$/i.test(v) && !/\s/.test(v);
+}
+
+function resolveVariant(r: ConfigRow, list: FamilyVariant[]): FamilyVariant | undefined {
+  if (r.variantId) {
+    const byId = list.find((v) => v.id === r.variantId);
+    if (byId) return byId;
+  }
+  const code = r.codigo.trim();
+  if (!code) return undefined;
+  return (
+    list.find((v) => v.code === code) ||
+    list.find((v) => v.code.startsWith(`${code}-`) || code.startsWith(`${v.code}-`))
+  );
+}
+
+/** Identity Name for the row — never prefer Short/Long SKU over product name. */
+function displayName(r: ConfigRow, list: FamilyVariant[]): string {
+  const stored = (r.nombre || '').trim();
+  if (stored && !looksLikeSku(stored) && stored !== r.codigo.trim()) return stored;
+  const live = resolveVariant(r, list);
+  const liveName = (live?.name || '').trim();
+  if (liveName && !looksLikeSku(liveName)) return liveName;
+  return stored && !looksLikeSku(stored) ? stored : '';
 }
 
 /**
@@ -152,14 +194,53 @@ export function RelatedVariantsEditor({
     };
   }, [familyId, currentVariantId]);
 
+  // Backfill Name / Description / variantId on legacy rows that only stored the SKU.
+  useEffect(() => {
+    if (variants.length === 0 || rows.length === 0) return;
+    let changed = false;
+    const next = rows.map((r) => {
+      if (isEmptyRow(r)) return r;
+      const live = resolveVariant(r, variants);
+      if (!live) return r;
+      const patch: Partial<ConfigRow> = {};
+      const nom = (r.nombre || '').trim();
+      if (!nom || looksLikeSku(nom) || nom === r.codigo.trim()) {
+        const liveName = (live.name || '').trim();
+        if (liveName && !looksLikeSku(liveName)) {
+          patch.nombre = liveName;
+          changed = true;
+        }
+      }
+      if (!(r.descripcion || '').trim() && (live.short_description || '').trim()) {
+        patch.descripcion = live.short_description!.trim();
+        changed = true;
+      }
+      if (!r.variantId) {
+        patch.variantId = live.id;
+        changed = true;
+      }
+      return Object.keys(patch).length ? { ...r, ...patch } : r;
+    });
+    if (changed) onChange(next);
+    // Only when the family variant list arrives — avoid loops on every keystroke.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: variants load trigger
+  }, [variants]);
+
+  const onSheetIds = useMemo(
+    () => new Set(rows.map((r) => (r.variantId || '').trim()).filter(Boolean)),
+    [rows]
+  );
   const onSheetCodes = useMemo(
     () => new Set(rows.map((r) => r.codigo.trim()).filter(Boolean)),
     [rows]
   );
 
   const available = useMemo(
-    () => variants.filter((v) => !onSheetCodes.has(v.code)),
-    [variants, onSheetCodes]
+    () =>
+      variants.filter(
+        (v) => !onSheetIds.has(v.id) && !onSheetCodes.has(v.code)
+      ),
+    [variants, onSheetIds, onSheetCodes]
   );
 
   const familyName = products.find((p) => p.id === familyId)?.name;
@@ -206,7 +287,7 @@ export function RelatedVariantsEditor({
 
   const removeRow = (i: number) => {
     const next = rows.filter((_, idx) => idx !== i);
-    onChange(next.length ? next : [{ codigo: '', descripcion: '', componente: '' }]);
+    onChange(next.length ? next : [{ codigo: '', nombre: '', descripcion: '', componente: '' }]);
   };
 
   const sheetRows = rows.filter((r) => !isEmptyRow(r));
@@ -214,9 +295,11 @@ export function RelatedVariantsEditor({
   return (
     <div className="space-y-8">
       <div className="space-y-2">
-        <h3 className="text-sm font-semibold uppercase tracking-wide">Related Variant</h3>
+        <h3 className="text-sm font-semibold uppercase tracking-wide">Related Product</h3>
         <p className="text-[11px] text-gray-500 max-w-xl leading-relaxed">
-          Choose a family, open the variant list, check what you need, then add them to the sheet.
+          Accessories and complementary items. Everything added here prints on the Spec Sheet under{' '}
+          <em>Related Product</em>. The public site does not read this list — its{' '}
+          <em>Related Variants</em> are resolved automatically from the family.
         </p>
       </div>
 
@@ -265,50 +348,66 @@ export function RelatedVariantsEditor({
 
         {sheetRows.length === 0 ? (
           <p className="text-[11px] text-gray-400 italic py-2">
-            Nothing on the sheet yet — browse variants and press Add.
+            Nothing added yet — browse variants and press Add.
           </p>
         ) : (
           <div className="space-y-4">
             {rows.map((c, i) =>
               isEmptyRow(c) ? null : (
-                <div key={`${c.codigo}-${i}`} className="flex items-end gap-3">
-                  <div className="grid flex-1 grid-cols-1 sm:grid-cols-3 gap-4">
-                    <input
-                      className={`${fieldClass} bg-gray-50 font-mono`}
-                      placeholder="Code"
-                      value={c.codigo}
-                      readOnly
-                      tabIndex={-1}
-                    />
-                    <input
-                      className={fieldClass}
-                      placeholder="Description"
-                      value={c.descripcion}
-                      onChange={(e) => updateRow(i, { descripcion: e.target.value })}
-                    />
-                    <AdminSelect
-                      aria-label="Type / Component"
-                      value={c.componente}
-                      placeholder="— Type / Component —"
-                      onChange={(v) => updateRow(i, { componente: v })}
-                      options={[
-                        ...(c.componente &&
-                        !(COMPONENT_OPTIONS as readonly string[]).includes(
-                          c.componente as (typeof COMPONENT_OPTIONS)[number],
-                        )
-                          ? [{ value: c.componente, label: c.componente }]
-                          : []),
-                        ...COMPONENT_OPTIONS.map((opt) => ({ value: opt, label: opt })),
-                      ]}
-                    />
+                <div key={`${c.variantId || c.codigo}-${i}`} className="border border-gray-100 p-3">
+                  <div className="flex items-end gap-3">
+                    <div className="grid flex-1 grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-[10px] uppercase tracking-wide text-gray-400 mb-1">
+                          Name
+                        </label>
+                        <input
+                          className={fieldClass}
+                          placeholder="Name"
+                          value={displayName(c, variants) || (c.nombre || '')}
+                          onChange={(e) => updateRow(i, { nombre: e.target.value })}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] uppercase tracking-wide text-gray-400 mb-1">
+                          Description
+                        </label>
+                        <input
+                          className={fieldClass}
+                          placeholder="Description"
+                          value={c.descripcion}
+                          onChange={(e) => updateRow(i, { descripcion: e.target.value })}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] uppercase tracking-wide text-gray-400 mb-1">
+                          Type
+                        </label>
+                        <AdminSelect
+                          aria-label="Type / Component"
+                          value={c.componente}
+                          placeholder="— Type / Component —"
+                          onChange={(v) => updateRow(i, { componente: v })}
+                          options={[
+                            ...(c.componente &&
+                            !(COMPONENT_OPTIONS as readonly string[]).includes(
+                              c.componente as (typeof COMPONENT_OPTIONS)[number],
+                            )
+                              ? [{ value: c.componente, label: c.componente }]
+                              : []),
+                            ...COMPONENT_OPTIONS.map((opt) => ({ value: opt, label: opt })),
+                          ]}
+                        />
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeRow(i)}
+                      className="mb-0.5 shrink-0 border border-red-200 bg-red-50 px-3 py-2.5 text-[11px] text-red-600 hover:border-red-300"
+                    >
+                      Remove
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => removeRow(i)}
-                    className="mb-0.5 shrink-0 border border-red-200 bg-red-50 px-3 py-2.5 text-[11px] text-red-600 hover:border-red-300"
-                  >
-                    Remove
-                  </button>
                 </div>
               )
             )}

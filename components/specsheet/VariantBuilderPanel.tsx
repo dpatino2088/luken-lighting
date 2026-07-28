@@ -29,7 +29,7 @@ import { AdminSelect } from '@/components/ui/AdminSelect';
 type SubTab = 'general' | 'config' | 'tech' | 'notes';
 const SUBTABS: { id: SubTab; label: string }[] = [
   { id: 'general', label: 'General data' },
-  { id: 'config', label: 'Related Variant' },
+  { id: 'config', label: 'Related' },
   { id: 'tech', label: 'Technical data' },
   { id: 'notes', label: 'Notes' },
 ];

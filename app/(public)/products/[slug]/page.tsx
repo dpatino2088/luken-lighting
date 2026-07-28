@@ -5,8 +5,9 @@ import { Container } from '@/components/ui/Container';
 import { VariantsTable } from '@/components/VariantsTable';
 import { FilterDropdown } from '@/components/FilterDropdown';
 import { createClient } from '@/lib/supabase/server';
+import { PUBLIC_VARIANT_WITH_RELATIONS } from '@/lib/supabase/publicSelects';
 import { ProductVariant } from '@/lib/types';
-import { buildSku } from '@/lib/sku/skuRules';
+import { buildSku, extractSkuColorCode } from '@/lib/sku/skuRules';
 import { SUBCATEGORY_OPTIONS } from '@/lib/sku/specSheet';
 import { formatCCT, formatCRI } from '@/lib/utils';
 import { generateMetadata as genMeta } from '@/lib/seo';
@@ -15,7 +16,17 @@ import { CONTROL_LABELS } from './product-constants';
 
 interface PageProps {
   params: Promise<{ slug: string }>;
-  searchParams?: Promise<{ optic?: string; k?: string; cri?: string; control?: string; type?: string }>;
+  searchParams?: Promise<{
+    optic?: string;
+    color?: string;
+    power?: string;
+    lumens?: string;
+    k?: string;
+    cri?: string;
+    control?: string;
+    type?: string;
+    ip?: string;
+  }>;
 }
 
 // Group the public "Product Codes" list into sections by the general product
@@ -67,12 +78,12 @@ export default async function ProductPage({ params, searchParams }: PageProps) {
   if (product) {
     const { data: variants } = await supabase
       .from('product_variants')
-      .select(`*, category:product_categories(*), product:products(*), assets:product_assets(*)`)
+      .select(PUBLIC_VARIANT_WITH_RELATIONS)
       .eq('product_id', product.id)
       .eq('is_active', true)
       .order('name');
 
-    const variantList = (variants as ProductVariant[]) || [];
+    const variantList = (variants as unknown as ProductVariant[]) || [];
 
     // Public "Product Codes" shows the variant's real code. When the code is
     // AUTO (still linked to the SKU) we expand it to the LONG SKU (all segments)
@@ -122,10 +133,14 @@ export default async function ProductPage({ params, searchParams }: PageProps) {
         product={product}
         variants={enriched}
         filterOptic={filters.optic}
+        filterColor={filters.color}
+        filterPower={filters.power}
+        filterLumens={filters.lumens}
         filterK={filters.k}
         filterCri={filters.cri}
         filterControl={filters.control}
         filterType={filters.type}
+        filterIp={filters.ip}
       />
     );
   }
@@ -139,21 +154,39 @@ function ProductView({
   product,
   variants,
   filterOptic,
+  filterColor,
+  filterPower,
+  filterLumens,
   filterK,
   filterCri,
   filterControl,
   filterType,
+  filterIp,
 }: {
   product: any;
   variants: ProductVariant[];
   filterOptic?: string;
+  filterColor?: string;
+  filterPower?: string;
+  filterLumens?: string;
   filterK?: string;
   filterCri?: string;
   filterControl?: string;
   filterType?: string;
+  filterIp?: string;
 }) {
   const baseUrl = `/products/${product.slug}`;
-  const currentFilters = { optic: filterOptic, k: filterK, cri: filterCri, control: filterControl, type: filterType };
+  const currentFilters = {
+    optic: filterOptic,
+    color: filterColor,
+    power: filterPower,
+    lumens: filterLumens,
+    k: filterK,
+    cri: filterCri,
+    control: filterControl,
+    type: filterType,
+    ip: filterIp,
+  };
 
   const getCctLabel = (v: ProductVariant) =>
     (v.cct_min || v.cct_max) ? formatCCT(v.cct_min, v.cct_max) : null;
@@ -161,23 +194,72 @@ function ProductView({
     v.cri ? formatCRI(v.cri) : null;
 
   const getBeamLabel = (v: ProductVariant) =>
-    v.beam_angle ? `${v.beam_angle}°` : null;
+    v.beam_angle != null ? `${v.beam_angle}°` : null;
+
+  const getColorLabel = (v: ProductVariant) =>
+    extractSkuColorCode(v.full_code || v.code, v.finish) || null;
+
+  // Power / Lumens mirror the table cells, system value first.
+  const getPowerLabel = (v: ProductVariant) => {
+    const w = v.power_w_system || v.power_w;
+    return w ? `${w}W` : null;
+  };
+  const getLumensLabel = (v: ProductVariant) => {
+    const lm = v.lumens_system || v.lumens;
+    return lm ? `${lm}lm` : null;
+  };
 
   const filtered = variants.filter((v) => {
     if (filterType && v._group !== filterType) return false;
     if (filterOptic && getBeamLabel(v) !== filterOptic) return false;
+    if (filterColor && getColorLabel(v) !== filterColor) return false;
+    if (filterPower && getPowerLabel(v) !== filterPower) return false;
+    if (filterLumens && getLumensLabel(v) !== filterLumens) return false;
     if (filterK && getCctLabel(v) !== filterK) return false;
     if (filterCri && getCriLabel(v) !== filterCri) return false;
+    if (filterIp && (v.ip_rating || '') !== filterIp) return false;
     if (filterControl && !(v.control_types && v.control_types.includes(filterControl))) return false;
     return true;
   });
 
-  // Subcategory options actually present on this product, kept in GROUP_ORDER.
+  // Options that actually appear in this product’s table (same labels as columns).
   const uniqueType = GROUP_ORDER.filter((g) => variants.some((v) => v._group === g));
   const uniqueOptic = [...new Set(variants.map((v) => getBeamLabel(v)).filter(Boolean))] as string[];
+  const uniqueColor = [...new Set(variants.map((v) => getColorLabel(v)).filter(Boolean))] as string[];
+  uniqueColor.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  uniqueOptic.sort((a, b) => parseFloat(a) - parseFloat(b));
+  const byNumber = (a: string, b: string) => parseFloat(a) - parseFloat(b);
+  const uniquePower = [...new Set(variants.map((v) => getPowerLabel(v)).filter(Boolean))] as string[];
+  uniquePower.sort(byNumber);
+  const uniqueLumens = [...new Set(variants.map((v) => getLumensLabel(v)).filter(Boolean))] as string[];
+  uniqueLumens.sort(byNumber);
   const uniqueK = [...new Set(variants.map((v) => getCctLabel(v)).filter(Boolean))] as string[];
   const uniqueCri = [...new Set(variants.map((v) => getCriLabel(v)).filter(Boolean))] as string[];
+  const uniqueIp = [...new Set(variants.map((v) => v.ip_rating).filter(Boolean))] as string[];
+  uniqueIp.sort();
   const uniqueControl = [...new Set(variants.flatMap((v) => v.control_types || []))].filter(Boolean).sort();
+
+  // One dropdown per table column that has data, so the filter bar reads like the
+  // table. CRI has no column, so it only appears when it tells variants apart.
+  const filterConfigs = [
+    { label: 'Type', filterKey: 'type', options: uniqueType, current: filterType },
+    { label: 'Optic', filterKey: 'optic', options: uniqueOptic, current: filterOptic },
+    { label: 'Color', filterKey: 'color', options: uniqueColor, current: filterColor },
+    { label: 'Power', filterKey: 'power', options: uniquePower, current: filterPower },
+    { label: 'Lumens', filterKey: 'lumens', options: uniqueLumens, current: filterLumens },
+    { label: 'CCT', filterKey: 'k', options: uniqueK, current: filterK },
+    ...(uniqueCri.length > 1
+      ? [{ label: 'CRI', filterKey: 'cri', options: uniqueCri, current: filterCri }]
+      : []),
+    { label: 'IP', filterKey: 'ip', options: uniqueIp, current: filterIp },
+    {
+      label: 'Control',
+      filterKey: 'control',
+      options: uniqueControl.map((c) => CONTROL_LABELS[c] || c),
+      values: uniqueControl,
+      current: filterControl,
+    },
+  ].filter((f) => f.options.length > 0);
 
   const categoryName = product.category?.name || null;
 
@@ -277,53 +359,24 @@ function ProductView({
             </span>
           </div>
 
-          {/* Filters — always visible */}
           <div className="mb-6 bg-gray-50 border border-gray-200 rounded-lg px-6 py-5">
-            <div className="flex flex-wrap items-center gap-4">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-5">
               <span className="text-sm text-gray-500 mr-2">Filter codes by:</span>
-              {uniqueType.length > 1 && (
+              {filterConfigs.map((f) => (
                 <FilterDropdown
-                  label="Type"
-                  options={uniqueType}
-                  current={currentFilters.type}
+                  key={f.filterKey}
+                  label={f.label}
+                  options={f.options}
+                  values={f.values}
+                  current={f.current}
                   baseUrl={baseUrl}
-                  filterKey="type"
+                  filterKey={f.filterKey}
                   allFilters={currentFilters}
                 />
+              ))}
+              {filterConfigs.length === 0 && (
+                <span className="text-sm text-gray-400">No filters for this family yet.</span>
               )}
-              <FilterDropdown
-                label="Optic"
-                options={uniqueOptic}
-                current={currentFilters.optic}
-                baseUrl={baseUrl}
-                filterKey="optic"
-                allFilters={currentFilters}
-              />
-              <FilterDropdown
-                label="K"
-                options={uniqueK}
-                current={currentFilters.k}
-                baseUrl={baseUrl}
-                filterKey="k"
-                allFilters={currentFilters}
-              />
-              <FilterDropdown
-                label="CRI"
-                options={uniqueCri}
-                current={currentFilters.cri}
-                baseUrl={baseUrl}
-                filterKey="cri"
-                allFilters={currentFilters}
-              />
-              <FilterDropdown
-                label="Control"
-                options={uniqueControl.map((c) => CONTROL_LABELS[c] || c)}
-                values={uniqueControl}
-                current={currentFilters.control}
-                baseUrl={baseUrl}
-                filterKey="control"
-                allFilters={currentFilters}
-              />
             </div>
           </div>
 

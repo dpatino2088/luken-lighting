@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Plus, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { CsvImportWizard } from './CsvImportWizard';
+import { BackfillDatasheets } from './BackfillDatasheets';
 
 export function VariantsHeader() {
   const [showImport, setShowImport] = useState(false);
@@ -31,6 +32,7 @@ export function VariantsHeader() {
             <Upload className="w-4 h-4 mr-2" />
             Import Variants
           </Button>
+          <BackfillDatasheets />
         </div>
       </div>
 
