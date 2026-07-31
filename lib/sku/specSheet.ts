@@ -4,8 +4,8 @@
 //  and helpers shared by the editor, the live preview and the PDF export.
 // ──────────────────────────────────────────────────────────────────────────
 
-import type { SkuState } from './skuRules';
-import { EMPTY_SKU_STATE, buildSku } from './skuRules';
+import type { SkuResult, SkuState } from './skuRules';
+import { EMPTY_SKU_STATE, buildSku, copyMarker, hasCopyMarker } from './skuRules';
 
 export interface ConfigRow {
   /** Long/Short SKU — used for matching; not the primary UI label. */
@@ -272,14 +272,36 @@ export function primaryLumen(
   };
 }
 
-// The auto description = SKU long description (which already carries the
+/**
+ * What the sheet prints under Certifications.
+ *
+ * The IP rating is a certification, and it is already answered once in
+ * Characteristics, so it leads the list instead of being typed a second time —
+ * the free-text field is for what the IP cannot say (CE, RoHS, ETL…). A rating
+ * that was also typed by hand is not repeated, whatever case it was typed in.
+ */
+export function certificationList(d: SpecSheetData): string[] {
+  const typed = (d.iconList || '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const ip = (d.ipRating || '').trim();
+  if (!ip) return typed;
+  const same = (s: string) => s.toLowerCase() === ip.toLowerCase();
+  return [ip, ...typed.filter((s) => !same(s))];
+}
+
+// The auto description = the SKU long description (which already carries the
 // mounting type, since it is a SKU segment) + the luminous flux (Lumen) + the
 // structured product attributes owned by the Builder (material, IP rating,
-// electrical class) so the description reflects the full product. Lumen comes
-// from the Technical data (System/Source lumens), never from the SKU. Track /
-// Profile products (linear cross-sections) also get a "W x H x D mm" token built
-// from the dimensions, right after the SKU description.
-export function composeAutoDescription(longDesc: string, d: SpecSheetData): string {
+// electrical class) so the description reflects the full product.
+//
+// The flux is read from the Technical data (System/Source lumens), never from the
+// SKU, but it still reads where the Builder asks for it — after the socket, before
+// the CRI — so the description can be checked against the form top to bottom.
+// Track / Profile products (linear cross-sections) also get a "W x H x D mm" token
+// built from the dimensions, right after the SKU description.
+export function composeAutoDescription(r: SkuResult, d: SpecSheetData): string {
   const isTrackOrProfile = Boolean(
     (d.sku.track || '').trim() ||
       (d.sku.profile || '').trim() ||
@@ -289,12 +311,15 @@ export function composeAutoDescription(longDesc: string, d: SpecSheetData): stri
     ? [d.ancho, d.alto, d.fondo].map((s) => (s || '').trim()).filter(Boolean).join(' x ')
     : '';
   const dimensionPart = dimToken ? `${dimToken}mm` : '';
-  const lm = primaryLumen(d);
-  const lumenPart = lm ? `${lm.value} ${lm.unit}` : '';
   const extras = [d.material, d.ipRating, d.electricalClass]
     .map((s) => (s || '').trim())
     .filter(Boolean);
-  return [longDesc, dimensionPart, lumenPart, ...extras].filter(Boolean).join(' / ');
+
+  const tokens = r.segments.map((s) => s.desc).filter((desc): desc is string => Boolean(desc));
+  const lm = primaryLumen(d);
+  if (lm) tokens.splice(Math.min(r.fluxSlot, tokens.length), 0, `${lm.value} ${lm.unit}`);
+
+  return [...tokens, dimensionPart, ...extras].filter(Boolean).join(' / ');
 }
 
 /** The identity values (name / code / descriptions) the SKU would auto-generate. */
@@ -311,7 +336,7 @@ export function deriveIdentity(d: SpecSheetData): {
     name: [d.productName.trim(), r.nameBody].filter(Boolean).join(' '),
     code: (r.longCode || r.shortCode).trim(),
     codeDescription: r.shortDesc,
-    description: composeAutoDescription(r.longDesc, d),
+    description: composeAutoDescription(r, d),
   };
 }
 
@@ -342,6 +367,32 @@ export function syncIdentityFromSku(prev: SpecSheetData): SpecSheetData {
     codeDescription: derived.codeDescription,
     description: derived.description,
   };
+}
+
+/**
+ * Mark a sheet as the nth copy of the variant it was duplicated from.
+ *
+ * A copy has to differ from its source somewhere, and the only place that holds is
+ * the SKU itself. Patching the stored code with a "-COPY" string left the sheet
+ * still generating the source's code, so the copy could never be saved again: every
+ * save rebuilt identity from the SKU and hit the source's Long SKU. The Version
+ * segment carries the marker instead, so the copy generates its own code, name and
+ * descriptions — and clearing the marker is what turns it into a real variant.
+ */
+export function applyCopyMarker(prev: SpecSheetData, n = 1): SpecSheetData {
+  return syncIdentityFromSku({
+    ...prev,
+    sku: { ...prev.sku, version: 'CUSTOM', versionCustom: copyMarker(n) },
+  });
+}
+
+/** Drop the copy mark: the sheet stops being a duplicate and rebuilds its identity. */
+export function clearCopyMarker(prev: SpecSheetData): SpecSheetData {
+  if (!hasCopyMarker(prev.sku)) return prev;
+  return syncIdentityFromSku({
+    ...prev,
+    sku: { ...prev.sku, version: '', versionCustom: '' },
+  });
 }
 
 /**
@@ -380,6 +431,23 @@ export function applyFamilyName(prev: SpecSheetData, familyName: string): SpecSh
     codeDescription: derived.codeDescription,
     description: derived.description,
   };
+}
+
+/**
+ * Prefills the sheet footer from the value configured in Settings.
+ *
+ * Applied when a sheet is opened rather than baked in at creation, so changing
+ * the address in Settings reaches every sheet that never overrode it. An
+ * existing footer is left alone: the field stays editable for the odd variant
+ * that needs different wording.
+ */
+export function applyFooterDefault(
+  sheet: SpecSheetData,
+  defaultFooter: string | null | undefined
+): SpecSheetData {
+  const fallback = (defaultFooter || '').trim();
+  if (!fallback || sheet.footerNote.trim()) return sheet;
+  return { ...sheet, footerNote: fallback };
 }
 
 /**

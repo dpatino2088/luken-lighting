@@ -21,6 +21,7 @@ import {
   DRIVER_V_OPTIONS,
   CTRL_OPTIONS,
   VERSION_OPTIONS,
+  hasCopyMarker,
   trackOptionsForType,
 } from '@/lib/sku/skuRules';
 import { MONTAJE_OPTIONS } from '@/lib/sku/specSheet';
@@ -62,7 +63,12 @@ function SkuSelect({
   );
 }
 
-function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+/**
+ * One titled block of the Builder — Identity & format, Light source, and so on.
+ * Exported because the sheet's own blocks (Characteristics) are read as part of
+ * the same list of questions, so they are drawn the same way.
+ */
+export function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
     <div className="border border-gray-200 bg-gray-50/40 p-5 sm:p-6 space-y-5">
       <div className="flex items-baseline gap-2 border-b border-gray-200 pb-3">
@@ -100,7 +106,14 @@ function MountingSelect({
   );
 }
 
-function ColorAndVersion({
+/**
+ * Finish, with the line for one that is not on the list.
+ *
+ * Kept together in one component because every builder — fixture, track, profile,
+ * accessory — offers the same field, and a Custom option whose text box was left
+ * out of one of them would build a SKU with the finish missing.
+ */
+function ColorField({
   state,
   set,
 }: {
@@ -110,6 +123,36 @@ function ColorAndVersion({
   return (
     <>
       <SkuSelect label="Color / finish" value={state.color} onChange={(v) => set({ color: v })} options={COLOR_OPTIONS} />
+      {state.color === 'CUSTOM' && (
+        <div>
+          <label className={labelClass}>Custom color / finish</label>
+          <input
+            className={inputClass}
+            value={state.colorCustom}
+            onChange={(e) => set({ colorCustom: e.target.value })}
+            placeholder="e.g. RAL 9016, Brushed copper"
+          />
+          <p className="mt-1 text-[11px] text-gray-400">
+            The SKU takes its letters and digits, up to 10 (
+            <span className="font-mono">RAL 9016 → RAL9016</span>). The description and the
+            variant&apos;s Finish keep it as typed.
+          </p>
+        </div>
+      )}
+    </>
+  );
+}
+
+function ColorAndVersion({
+  state,
+  set,
+}: {
+  state: SkuState;
+  set: (patch: Partial<SkuState>) => void;
+}) {
+  return (
+    <>
+      <ColorField state={state} set={set} />
       <SkuSelect label="Version" value={state.version} onChange={(v) => set({ version: v })} options={VERSION_OPTIONS} />
       {state.version === 'CUSTOM' && (
         <div>
@@ -139,6 +182,8 @@ export function SkuFields({
   profileMode = false,
   /** Current Type (subcategory) — filters track codes by voltage class. */
   subcategory = '',
+  /** Product family, which leads the generated Name (e.g. "Maia"). */
+  productName = '',
 }: {
   state: SkuState;
   onChange: (s: SkuState) => void;
@@ -148,9 +193,12 @@ export function SkuFields({
   trackMode?: boolean;
   profileMode?: boolean;
   subcategory?: string;
+  productName?: string;
 }) {
   const set = (patch: Partial<SkuState>) => onChange({ ...state, ...patch });
   const r = buildSku(state);
+  // Same composition the save writes, so the bar is not a second opinion.
+  const name = [productName.trim(), r.nameBody].filter(Boolean).join(' ');
 
   const chooseTrack = (v: string) =>
     set(
@@ -192,15 +240,40 @@ export function SkuFields({
 
   return (
     <div className="space-y-8">
-      <div className="bg-gray-900 text-white p-5 grid grid-cols-1 sm:grid-cols-2 gap-6">
-        <div>
-          <div className="text-[10px] uppercase tracking-widest text-gray-400">Short SKU</div>
-          <div className="font-mono text-sm break-all">{r.shortCode || '—'}</div>
+      {/* What the answers add up to: the commercial name on the left, and the two
+          codes stacked on the right, short over long — the short one is the stem
+          of the long one, so reading down shows what the extra segments add. */}
+      <div className="bg-gray-900 text-white">
+        <div className="grid grid-cols-1 gap-6 p-5 sm:grid-cols-2">
+          <div>
+            <div className="text-[10px] uppercase tracking-widest text-gray-400">Name</div>
+            <div className="text-lg font-light uppercase tracking-wide break-words">
+              {name || '—'}
+            </div>
+          </div>
+          <div className="space-y-3">
+            <div>
+              <div className="text-[10px] uppercase tracking-widest text-gray-400">Short SKU</div>
+              <div className="font-mono text-sm break-all">{r.shortCode || '—'}</div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-widest text-gray-400">Long SKU</div>
+              <div className="font-mono text-xs break-all text-gray-300">{r.longCode || '—'}</div>
+            </div>
+          </div>
         </div>
-        <div>
-          <div className="text-[10px] uppercase tracking-widest text-gray-400">Long SKU</div>
-          <div className="font-mono text-xs break-all text-gray-300">{r.longCode || '—'}</div>
-        </div>
+
+        {/* The mark is the only thing telling this variant apart from the one it was
+            duplicated from, so it is explained next to the code it shows up in
+            rather than in the Version field at the bottom. There is nothing to
+            press: Save drops it as soon as the copy stands on its own. */}
+        {hasCopyMarker(state) && (
+          <p className="border-t border-gray-700 px-5 py-3 text-[11px] text-gray-400">
+            Duplicate — <span className="font-mono text-gray-200">COPY</span> keeps this apart from
+            the variant it came from. Change something (optic, CCT, finish…) and Save: the mark
+            comes off on its own once the code stands alone.
+          </p>
+        )}
       </div>
 
       <Section title="Identity & format" hint={identityHint}>
@@ -313,71 +386,68 @@ export function SkuFields({
               </div>
             )}
             <MountingSelect value={state.mounting} onChange={(v) => set({ mounting: v })} />
+            {/* Trim and finish describe the piece itself, not the light it makes. */}
+            <SkuSelect label="Trim" value={state.trim} onChange={(v) => set({ trim: v })} options={TRIM_OPTIONS} />
+            <ColorField state={state} set={set} />
           </>
         )}
       </Section>
 
-      {/* Fixtures only: light source / quality. Track & LED Profiles: electrical only. */}
+      {/* Fixtures only: the light and what it comes out like, in one block.
+          Track & LED Profiles: electrical only. */}
       {!accessoryMode && !trackMode && !profileMode && (
-        <>
-          <Section title="Light source">
-            <SkuSelect label="Source (required)" value={state.source} onChange={(v) => set({ source: v })} options={SOURCE_OPTIONS} />
-            <SkuSelect label="Socket" value={state.socket} onChange={(v) => set({ socket: v })} options={SOCKET_OPTIONS} />
-            {state.socket === 'CUSTOM' && (
-              <div>
-                <label className={labelClass}>Custom socket</label>
-                <input className={inputClass} value={state.socketCustom} onChange={(e) => set({ socketCustom: e.target.value })} placeholder="e.g. GX53, R7s" />
-              </div>
-            )}
-            <SkuSelect label="Trim" value={state.trim} onChange={(v) => set({ trim: v })} options={TRIM_OPTIONS} />
-            <SkuSelect label="Color / finish" value={state.color} onChange={(v) => set({ color: v })} options={COLOR_OPTIONS} />
-            {onLumenChange && (
-              <div>
-                <label className={labelClass}>Lumen (lm)</label>
-                <input
-                  className={inputClass}
-                  type="number"
-                  inputMode="numeric"
-                  value={lumen ?? ''}
-                  onChange={(e) => onLumenChange(e.target.value)}
-                  placeholder="e.g. 1200"
-                />
-                <p className="mt-1 text-[11px] text-gray-400">Not in the SKU. Shows in General data &amp; description.</p>
-              </div>
-            )}
-          </Section>
-
-          <Section title="Light quality">
-            <SkuSelect label="CRI" value={state.cri} onChange={(v) => set({ cri: v })} options={CRI_OPTIONS} />
-            {state.cri === 'CUSTOM' && (
-              <div>
-                <label className={labelClass}>Custom CRI</label>
-                <input className={inputClass} type="number" min="0" max="100" value={state.criCustom} onChange={(e) => set({ criCustom: e.target.value })} placeholder="e.g. 97" />
-              </div>
-            )}
-            <SkuSelect label="CCT" value={state.cct} onChange={(v) => set({ cct: v })} options={CCT_OPTIONS} />
-            {state.cct === 'CUSTOM' && (
-              <div>
-                <label className={labelClass}>Custom CCT (K)</label>
-                <input className={inputClass} value={state.cctCustom} onChange={(e) => set({ cctCustom: e.target.value })} placeholder="e.g. 3300 or 2700-6500" />
-              </div>
-            )}
-            <SkuSelect label="Optic / beam" value={state.optic} onChange={(v) => set({ optic: v })} options={OPTIC_OPTIONS} />
-            {state.optic === 'CUSTOM' && (
-              <div>
-                <label className={labelClass}>Custom beam angle (°)</label>
-                <input className={inputClass} type="number" min="1" max="360" value={state.opticCustom} onChange={(e) => set({ opticCustom: e.target.value })} placeholder="e.g. 11" />
-              </div>
-            )}
-            <SkuSelect label="Power" value={state.watts} onChange={(v) => set({ watts: v })} options={WATTS_OPTIONS} />
-            {state.watts === 'CUSTOM' && (
-              <div>
-                <label className={labelClass}>Custom power (W)</label>
-                <input className={inputClass} type="number" min="0" step="0.1" value={state.wattsCustom} onChange={(e) => set({ wattsCustom: e.target.value })} placeholder="e.g. 18" />
-              </div>
-            )}
-          </Section>
-        </>
+        <Section title="Light source">
+          <SkuSelect label="Source (required)" value={state.source} onChange={(v) => set({ source: v })} options={SOURCE_OPTIONS} />
+          <SkuSelect label="Socket" value={state.socket} onChange={(v) => set({ socket: v })} options={SOCKET_OPTIONS} />
+          {state.socket === 'CUSTOM' && (
+            <div>
+              <label className={labelClass}>Custom socket</label>
+              <input className={inputClass} value={state.socketCustom} onChange={(e) => set({ socketCustom: e.target.value })} placeholder="e.g. GX53, R7s" />
+            </div>
+          )}
+          {onLumenChange && (
+            <div>
+              <label className={labelClass}>Lumen (lm)</label>
+              <input
+                className={inputClass}
+                type="number"
+                inputMode="numeric"
+                value={lumen ?? ''}
+                onChange={(e) => onLumenChange(e.target.value)}
+                placeholder="e.g. 1200"
+              />
+              <p className="mt-1 text-[11px] text-gray-400">Not in the SKU. Shows in General data &amp; description.</p>
+            </div>
+          )}
+          <SkuSelect label="CRI" value={state.cri} onChange={(v) => set({ cri: v })} options={CRI_OPTIONS} />
+          {state.cri === 'CUSTOM' && (
+            <div>
+              <label className={labelClass}>Custom CRI</label>
+              <input className={inputClass} type="number" min="0" max="100" value={state.criCustom} onChange={(e) => set({ criCustom: e.target.value })} placeholder="e.g. 97" />
+            </div>
+          )}
+          <SkuSelect label="CCT" value={state.cct} onChange={(v) => set({ cct: v })} options={CCT_OPTIONS} />
+          {state.cct === 'CUSTOM' && (
+            <div>
+              <label className={labelClass}>Custom CCT (K)</label>
+              <input className={inputClass} value={state.cctCustom} onChange={(e) => set({ cctCustom: e.target.value })} placeholder="e.g. 3300 or 2700-6500" />
+            </div>
+          )}
+          <SkuSelect label="Optic / beam" value={state.optic} onChange={(v) => set({ optic: v })} options={OPTIC_OPTIONS} />
+          {state.optic === 'CUSTOM' && (
+            <div>
+              <label className={labelClass}>Custom beam angle (°)</label>
+              <input className={inputClass} type="number" min="1" max="360" value={state.opticCustom} onChange={(e) => set({ opticCustom: e.target.value })} placeholder="e.g. 11" />
+            </div>
+          )}
+          <SkuSelect label="Power" value={state.watts} onChange={(v) => set({ watts: v })} options={WATTS_OPTIONS} />
+          {state.watts === 'CUSTOM' && (
+            <div>
+              <label className={labelClass}>Custom power (W)</label>
+              <input className={inputClass} type="number" min="0" step="0.1" value={state.wattsCustom} onChange={(e) => set({ wattsCustom: e.target.value })} placeholder="e.g. 18" />
+            </div>
+          )}
+        </Section>
       )}
 
       {!accessoryMode && (

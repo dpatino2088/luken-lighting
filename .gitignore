@@ -6,8 +6,17 @@
 # Testing
 /coverage
 
+# Where `npm run check:labels` compiles the label geometry to run it under node
+/.tmp-check/
+/.tmp-harness/
+# Label render dumped while checking a layout by eye
+/label-preview.png
+
 # Next.js
 /.next/
+# Builds run with NEXT_DIST_DIR, to check a change compiles without disturbing
+# the dev server that owns /.next
+/.next-*/
 /out/
 
 # Production

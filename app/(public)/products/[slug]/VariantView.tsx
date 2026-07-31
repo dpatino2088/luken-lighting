@@ -67,89 +67,80 @@ export function VariantView({
     ? `${(variant.lumens_system / variant.power_w_system).toFixed(1)} lm/W`
     : null;
 
+  /**
+   * The drawings that go under the table: the polar plot and the dimensioned
+   * elevation, each captioned on its own rather than under one shared heading, so a
+   * variant with two photometric curves reads as two figures.
+   */
+  const figures = [
+    ...photometricImages.map((img: ProductAsset) => ({ img, label: 'Photometric Distribution' })),
+    ...dimensionsImages.map((img: ProductAsset) => ({ img, label: 'Dimensions' })),
+  ];
+
   /* ── Tab 1: Technical Specs ─────────────────────────────────────────────── */
   const specsContent = (
     <div className="space-y-10">
-      {/* Two-column: specs table + photometric image */}
-      <div className="grid lg:grid-cols-3 gap-8">
-        <div className="lg:col-span-2 border border-gray-200 overflow-x-auto">
-          <table className="w-full min-w-[380px]">
-            <tbody>
-              <SpecRow label="Mounting Type" value={variant.mounting_type} />
-              <SpecRow label="Beam Angle" value={variant.beam_angle ? `${variant.beam_angle}°` : null} />
-              <SpecRow label="Light Source" value={variant.light_source} />
-              <SpecRow label="Power Source" value={variant.power_w ? `${variant.power_w}W` : null} />
-              <SpecRow label="Power System" value={variant.power_w_system ? `${variant.power_w_system}W` : null} />
-              <SpecRow label="Lumens Source" value={variant.lumens ? `${variant.lumens}lm` : null} />
-              <SpecRow label="Lumens System" value={variant.lumens_system ? `${variant.lumens_system}lm` : null} />
-              <SpecRow label="Efficacy Source" value={efficacySrc} />
-              <SpecRow label="Efficacy System" value={efficacySys} />
-              <SpecRow
-                label="Color Temperature"
-                value={variant.cct_min || variant.cct_max ? formatCCT(variant.cct_min, variant.cct_max) : null}
-              />
-              <SpecRow label="CRI" value={formatCRI(variant.cri)} />
-              <SpecRow
-                label="Control"
-                value={
-                  variant.control_types && variant.control_types.length > 0
-                    ? variant.control_types.map((ct: string) => CONTROL_LABELS[ct] || ct).join(', ')
-                    : null
-                }
-              />
-              <SpecRow label="Voltage" value={variant.voltage} />
-              <SpecRow label="IP Rating" value={variant.ip_rating} />
-              <SpecRow label="Electrical Class" value={variant.class} />
-              <SpecRow label="Material" value={variant.material} />
-              <SpecRow label="Finish" value={variant.finish} />
-              <SpecRow label="Dimensions" value={variant.dimensions ? formatDimensions(variant.dimensions) : null} />
-            </tbody>
-          </table>
-        </div>
-
-        {(photometricImages.length > 0 || dimensionsImages.length > 0) && (
-          <div className="space-y-6">
-            {photometricImages.length > 0 && (
-              <div className="space-y-3">
-                <h4 className="text-xs font-semibold uppercase tracking-widest text-gray-400">
-                  Photometric Distribution
-                </h4>
-                {photometricImages.map((img: ProductAsset) => (
-                  <div key={img.id} className="border border-gray-200 bg-white p-4">
-                    <Image
-                      src={img.file_url}
-                      alt={img.title || 'Photometric distribution'}
-                      width={1200}
-                      height={900}
-                      sizes="(max-width: 1024px) 100vw, 33vw"
-                      className="w-full h-auto"
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
-            {dimensionsImages.length > 0 && (
-              <div className="space-y-3">
-                <h4 className="text-xs font-semibold uppercase tracking-widest text-gray-400">
-                  Dimensions
-                </h4>
-                {dimensionsImages.map((img: ProductAsset) => (
-                  <div key={img.id} className="border border-gray-200 bg-white p-4">
-                    <Image
-                      src={img.file_url}
-                      alt={img.title || 'Product dimensions'}
-                      width={1200}
-                      height={900}
-                      sizes="(max-width: 1024px) 100vw, 33vw"
-                      className="w-full h-auto"
-                    />
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+      {/* The table has the full width and the drawings sit under it. Beside it they
+          were stretched to whatever a third of the page came to, which on a wide
+          screen drew a line diagram larger than the photograph of the product. */}
+      <div className="border border-gray-200 overflow-x-auto">
+        <table className="w-full min-w-[380px]">
+          <tbody>
+            <SpecRow label="Mounting Type" value={variant.mounting_type} />
+            <SpecRow label="Beam Angle" value={variant.beam_angle ? `${variant.beam_angle}°` : null} />
+            <SpecRow label="Light Source" value={variant.light_source} />
+            <SpecRow label="Power Source" value={variant.power_w ? `${variant.power_w}W` : null} />
+            <SpecRow label="Power System" value={variant.power_w_system ? `${variant.power_w_system}W` : null} />
+            <SpecRow label="Lumens Source" value={variant.lumens ? `${variant.lumens}lm` : null} />
+            <SpecRow label="Lumens System" value={variant.lumens_system ? `${variant.lumens_system}lm` : null} />
+            <SpecRow label="Efficacy Source" value={efficacySrc} />
+            <SpecRow label="Efficacy System" value={efficacySys} />
+            <SpecRow
+              label="Color Temperature"
+              value={variant.cct_min || variant.cct_max ? formatCCT(variant.cct_min, variant.cct_max) : null}
+            />
+            <SpecRow label="CRI" value={formatCRI(variant.cri)} />
+            <SpecRow
+              label="Control"
+              value={
+                variant.control_types && variant.control_types.length > 0
+                  ? variant.control_types.map((ct: string) => CONTROL_LABELS[ct] || ct).join(', ')
+                  : null
+              }
+            />
+            <SpecRow label="Voltage" value={variant.voltage} />
+            <SpecRow label="IP Rating" value={variant.ip_rating} />
+            <SpecRow label="Electrical Class" value={variant.class} />
+            <SpecRow label="Material" value={variant.material} />
+            <SpecRow label="Finish" value={variant.finish} />
+            <SpecRow label="Dimensions" value={variant.dimensions ? formatDimensions(variant.dimensions) : null} />
+          </tbody>
+        </table>
       </div>
+
+      {figures.length > 0 && (
+        <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
+          {figures.map(({ img, label }) => (
+            <figure key={img.id} className="flex flex-col border border-gray-200 bg-white px-6 py-5">
+              <figcaption className="mb-4 text-xs font-semibold uppercase tracking-widest text-gray-400">
+                {label}
+              </figcaption>
+              {/* Held to a size rather than filled to the column, and centred in what
+                  the card has left over, so a short drawing beside a tall one keeps
+                  even room around it. The cap is what `sizes` reports as well, so the
+                  file that comes down the wire is scaled for what is shown. */}
+              <Image
+                src={img.file_url}
+                alt={img.title || label}
+                width={1200}
+                height={900}
+                sizes="(max-width: 640px) 80vw, 220px"
+                className="m-auto h-auto w-full max-w-[220px]"
+              />
+            </figure>
+          ))}
+        </div>
+      )}
     </div>
   );
 

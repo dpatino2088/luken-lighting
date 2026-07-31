@@ -3,8 +3,18 @@
 import { useState, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Search, Eye, Edit, Trash2, ImageOff, ChevronLeft, ChevronRight } from 'lucide-react';
-import { deleteProduct } from '@/app/(admin)/admin/products/actions';
+import {
+  Search,
+  Eye,
+  Edit,
+  Trash2,
+  ImageOff,
+  ChevronLeft,
+  ChevronRight,
+  Power,
+  PowerOff,
+} from 'lucide-react';
+import { deleteProduct, setProductActive } from '@/app/(admin)/admin/products/actions';
 import { toast } from '@/components/ui/Toast';
 import { confirmDialog } from '@/components/ui/ConfirmDialog';
 
@@ -18,6 +28,7 @@ interface ProductRow {
   hero_image_url: string | null;
   thumbnail_url: string | null;
   sort_order: number;
+  is_active: boolean;
 }
 
 interface Props {
@@ -33,6 +44,7 @@ export function AdminProductsTable({ products, categories }: Props) {
   const [categoryFilter, setCategoryFilter] = useState('');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<number>(50);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const catMap = useMemo(() => new Map(categories.map((c) => [c.id, c.name])), [categories]);
 
@@ -67,6 +79,23 @@ export function AdminProductsTable({ products, categories }: Props) {
   const handleSearchChange = (val: string) => {
     setSearch(val);
     setPage(1);
+  };
+
+  const handleToggleActive = async (prod: ProductRow) => {
+    const next = !prod.is_active;
+    setBusyId(prod.id);
+    const result = await setProductActive(prod.id, next);
+    setBusyId(null);
+    if (result.error) {
+      toast.error(result.error);
+      return;
+    }
+    toast.success(
+      next
+        ? `"${prod.name}" is live again.`
+        : `"${prod.name}" is off — it and its variants are hidden from the site.`
+    );
+    router.refresh();
   };
 
   const handleDelete = async (prod: ProductRow) => {
@@ -125,7 +154,8 @@ export function AdminProductsTable({ products, categories }: Props) {
                 <th className="px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wider text-gray-500">Environment</th>
                 <th className="px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wider text-gray-500">Slug</th>
                 <th className="px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wider text-gray-500">Description</th>
-                <th className="px-3 py-2 w-24"></th>
+                <th className="px-3 py-2 text-left text-[10px] font-medium uppercase tracking-wider text-gray-500">Status</th>
+                <th className="px-3 py-2 w-28"></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -133,7 +163,10 @@ export function AdminProductsTable({ products, categories }: Props) {
                 const imgUrl = prod.thumbnail_url || prod.hero_image_url;
 
                 return (
-                  <tr key={prod.id} className="hover:bg-gray-50 transition-colors">
+                  <tr
+                    key={prod.id}
+                    className={`hover:bg-gray-50 transition-colors ${prod.is_active ? '' : 'opacity-60'}`}
+                  >
                     <td className="px-2 py-1.5">
                       {imgUrl ? (
                         <img src={imgUrl} alt="" className="w-10 h-10 object-cover border border-gray-200" />
@@ -157,7 +190,26 @@ export function AdminProductsTable({ products, categories }: Props) {
                       {prod.description || '—'}
                     </td>
                     <td className="px-3 py-1.5">
+                      <span
+                        className={`inline-flex px-1.5 py-0.5 text-[10px] uppercase tracking-wide leading-tight ${prod.is_active ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-500'}`}
+                      >
+                        {prod.is_active ? 'Active' : 'Off'}
+                      </span>
+                    </td>
+                    <td className="px-3 py-1.5">
                       <div className="flex items-center justify-end gap-1">
+                        <button
+                          onClick={() => handleToggleActive(prod)}
+                          disabled={busyId === prod.id}
+                          className="p-1 text-gray-400 hover:text-gray-700 transition-colors disabled:opacity-30"
+                          title={prod.is_active ? 'Deactivate' : 'Activate'}
+                        >
+                          {prod.is_active ? (
+                            <PowerOff className="w-3.5 h-3.5" />
+                          ) : (
+                            <Power className="w-3.5 h-3.5" />
+                          )}
+                        </button>
                         <Link href={`/products/${prod.slug}`} target="_blank" className="p-1 text-gray-400 hover:text-gray-700" title="View on site">
                           <Eye className="w-3.5 h-3.5" />
                         </Link>

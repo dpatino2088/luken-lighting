@@ -4,7 +4,7 @@ import { Container } from '@/components/ui/Container';
 import { Button } from '@/components/ui/Button';
 import { ProductGrid } from '@/components/ProductGrid';
 import { createClient } from '@/lib/supabase/server';
-import { PUBLIC_VARIANT_WITH_RELATIONS } from '@/lib/supabase/publicSelects';
+import { PUBLIC_VARIANT_FEATURED } from '@/lib/supabase/publicSelects';
 import { getSiteImages } from '@/lib/site-images';
 import { ProductVariant, ProductCategory, InspirationProject } from '@/lib/types';
 
@@ -15,9 +15,10 @@ export default async function HomePage() {
   const { data: featuredVariants } = supabase
     ? await supabase
         .from('product_variants')
-        .select(PUBLIC_VARIANT_WITH_RELATIONS)
+        .select(PUBLIC_VARIANT_FEATURED)
         .eq('is_active', true)
         .eq('is_featured', true)
+        .eq('product.is_active', true)
         .limit(8)
     : { data: null };
 

@@ -20,6 +20,7 @@ export async function generateMetadata({ params }: PageProps) {
     .from('product_variants')
     .select('name, code, short_description, product:products!inner(slug)')
     .eq('slug', variantSlug)
+    .eq('product.is_active', true)
     .single();
 
   if (variant && (variant as any).product?.slug === slug) {
@@ -42,6 +43,7 @@ export default async function VariantPage({ params }: PageProps) {
     .from('product_variants')
     .select(PUBLIC_VARIANT_DETAIL)
     .eq('slug', variantSlug)
+    .eq('product.is_active', true)
     .single();
 
   if (error || !variant || (variant as any).product?.slug !== slug) {

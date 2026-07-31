@@ -1,0 +1,19 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "outDir": "../.tmp-check/out",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "jsx": "react-jsx",
+    "declaration": false,
+    "sourceMap": false,
+    "incremental": false
+  },
+  "include": [
+    "check-placements.ts",
+    "../lib/label/geometry.ts",
+    "../lib/label/layout.ts",
+    "../lib/label/arrange.ts"
+  ]
+}

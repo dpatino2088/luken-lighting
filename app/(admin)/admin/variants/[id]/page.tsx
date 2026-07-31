@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server';
 import { notFound } from 'next/navigation';
 import { VariantEditTabs } from '@/components/admin/VariantEditTabs';
 import { getSettings } from '@/app/(admin)/admin/settings/actions';
-import { normalizeSpecSheet, type SpecSheetData } from '@/lib/sku/specSheet';
+import { applyFooterDefault, normalizeSpecSheet, type SpecSheetData } from '@/lib/sku/specSheet';
 import { seedSpecSheetFromVariant } from '@/lib/sku/mapToLuken';
 
 interface Props {
@@ -47,9 +47,12 @@ export default async function EditVariantPage({ params }: Props) {
   const settings = await getSettings();
 
   const productName = (products || []).find((p) => p.id === variant.product_id)?.name || variant.name || '';
-  const initialData: SpecSheetData = specSheet?.data
-    ? normalizeSpecSheet(specSheet.data as Partial<SpecSheetData>)
-    : seedSpecSheetFromVariant(variant, productName);
+  const initialData: SpecSheetData = applyFooterDefault(
+    specSheet?.data
+      ? normalizeSpecSheet(specSheet.data as Partial<SpecSheetData>)
+      : seedSpecSheetFromVariant(variant, productName),
+    settings.sheet_footer_note
+  );
 
   return (
     <VariantEditTabs

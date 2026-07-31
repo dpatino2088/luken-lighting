@@ -50,6 +50,9 @@ export interface Product {
   hero_image_url: string | null;
   thumbnail_url: string | null;
   sort_order: number;
+  is_active: boolean;
+  /** Label template this family prints, chosen once per product. */
+  label_template_id?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -124,6 +127,11 @@ export interface ProductVariant {
   
   manufacturer: string | null;
   manufacturer_sku: string | null;
+  /**
+   * UPC-A printed on packaging. Allocated once from Luken's GS1 range and never
+   * regenerated — it is already on boxes in the field.
+   */
+  gtin?: string | null;
   // Portal-only pricing: anon has no column grant for these, so public queries
   // never select them and public rows genuinely arrive without them.
   cost_usd?: number | null;
@@ -285,6 +293,13 @@ export interface AppSettings {
   eur_to_usd_rate: number;
   /** Brand logo shown on the spec sheet header (Preview + PDF). */
   brand_logo_url: string | null;
+  /** Wordmark printed on every product label. SVG keeps the label all-vector. */
+  label_logo_url: string | null;
+  /**
+   * Default footer line of the spec sheet. Prefilled into every variant so the
+   * web address is consistent across sheets, and still editable per variant.
+   */
+  sheet_footer_note: string | null;
 }
 
 export interface Manufacturer {

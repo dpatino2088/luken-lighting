@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getCurrentUser, getCurrentUserRole } from '@/lib/auth';
 import { launchPdfBrowser } from '@/lib/specsheet/launchBrowser';
-import { PDF_DOCUMENT_CSS } from '@/lib/specsheet/pdfDocumentCss';
+import { pdfDocumentCss, type PdfPageSize } from '@/lib/specsheet/pdfDocumentCss';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -13,6 +13,10 @@ type Body = {
   styleHrefs?: string[];
   htmlClass?: string;
   bodyClass?: string;
+  /** Millimetre page size for fixed-format output such as labels. */
+  pageSize?: { width_mm?: number; height_mm?: number };
+  rootId?: string;
+  background?: string;
 };
 
 function escapeAttr(value: string): string {
@@ -30,6 +34,9 @@ function buildDocument(body: {
   htmlClass: string;
   bodyClass: string;
   baseHref: string;
+  pageSize: PdfPageSize | null;
+  rootId: string;
+  background: string | null;
 }): string {
   const links = body.styleHrefs
     .map((href) => `<link rel="stylesheet" href="${escapeAttr(href)}" />`)
@@ -44,7 +51,11 @@ function buildDocument(body: {
 ${links}
 ${body.css ? `<style>\n${body.css}\n</style>` : ''}
 <style>
-${PDF_DOCUMENT_CSS}
+${pdfDocumentCss({
+  pageSize: body.pageSize,
+  rootId: body.rootId,
+  background: body.background || undefined,
+})}
 </style>
 </head>
 <body class="${escapeAttr(body.bodyClass)}">
@@ -79,6 +90,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Oversized css' }, { status: 400 });
   }
 
+  const w = Number(body.pageSize?.width_mm);
+  const h = Number(body.pageSize?.height_mm);
+  const pageSize: PdfPageSize | null =
+    Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0
+      ? { width_mm: w, height_mm: h }
+      : null;
+  const rootId = typeof body.rootId === 'string' && /^[A-Za-z][\w-]*$/.test(body.rootId)
+    ? body.rootId
+    : 'spec-sheet-print';
+
   const documentHtml = buildDocument({
     html,
     css,
@@ -88,6 +109,11 @@ export async function POST(request: Request) {
     htmlClass: typeof body.htmlClass === 'string' ? body.htmlClass : '',
     bodyClass: typeof body.bodyClass === 'string' ? body.bodyClass : '',
     baseHref: new URL(request.url).origin,
+    pageSize,
+    rootId,
+    background: /^#[0-9A-Fa-f]{3,8}$/.test(String(body.background || ''))
+      ? String(body.background)
+      : null,
   });
 
   const browser = await launchPdfBrowser();
@@ -119,8 +145,10 @@ export async function POST(request: Request) {
       await document.fonts.ready;
     });
 
+    // preferCSSPageSize lets the injected @page rule drive the sheet size, so a
+    // label comes out at its exact millimetre trim instead of on a Letter page.
     const pdf = await page.pdf({
-      format: 'Letter',
+      ...(pageSize ? {} : { format: 'Letter' as const }),
       printBackground: true,
       preferCSSPageSize: true,
       margin: { top: 0, right: 0, bottom: 0, left: 0 },

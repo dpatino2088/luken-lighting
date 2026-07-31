@@ -6,6 +6,8 @@ import { Plus, Upload } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { CsvImportWizard } from './CsvImportWizard';
 import { BackfillDatasheets } from './BackfillDatasheets';
+import { RebuildSkuCodes } from './RebuildSkuCodes';
+import { SkuRulesSync } from './SkuRulesSync';
 
 export function VariantsHeader() {
   const [showImport, setShowImport] = useState(false);
@@ -22,6 +24,7 @@ export function VariantsHeader() {
           </p>
         </div>
         <div className="flex items-center gap-3">
+          <SkuRulesSync />
           <Link href="/admin/variants/new">
             <Button variant="primary">
               <Plus className="w-4 h-4 mr-2" />
@@ -32,6 +35,7 @@ export function VariantsHeader() {
             <Upload className="w-4 h-4 mr-2" />
             Import Variants
           </Button>
+          <RebuildSkuCodes />
           <BackfillDatasheets />
         </div>
       </div>

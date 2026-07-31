@@ -195,8 +195,9 @@ export async function serializeSpecSheetForPdf(
     await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
 
     const clone = source.cloneNode(true) as HTMLElement;
-    clone.removeAttribute('id');
-    clone.id = 'spec-sheet-print';
+    // Keep the caller's id: the injected page CSS targets it by name, so a label
+    // root must survive here instead of being renamed to the sheet's.
+    clone.id = rootId;
     absolutizeUrls(clone);
 
     const html = clone.outerHTML;

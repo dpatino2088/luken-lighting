@@ -13,6 +13,7 @@ import { VariantBuilderPanel } from '@/components/specsheet/VariantBuilderPanel'
 import { IdentityFields } from '@/components/specsheet/IdentityFields';
 import { useSpecSheetSync } from '@/components/specsheet/useSpecSheetSync';
 import { SheetPreview } from '@/components/specsheet/SheetPreview';
+import { LabelTab } from '@/components/label/LabelTab';
 import { buildSku } from '@/lib/sku/skuRules';
 import { saveVariantBuilder, updateVariant } from '@/app/(admin)/admin/variants/actions';
 import { uploadSpecSheetPdfFromPreview } from '@/lib/specsheet/uploadSpecSheetPdf';
@@ -27,7 +28,7 @@ import {
 } from '@/lib/sku/specSheet';
 import { AdminSelect } from '@/components/ui/AdminSelect';
 
-type Tab = 'builder' | 'product' | 'files' | 'preview';
+type Tab = 'builder' | 'product' | 'files' | 'preview' | 'label';
 
 /** Asset slots the Spec Sheet renders — a new upload changes the PDF. */
 const SHEET_IMAGE_TYPES = ['image', 'photometric_image', 'dimensions_image'];
@@ -314,6 +315,9 @@ export function VariantEditTabs({
           <button type="button" onClick={() => setTab('preview')} className={topTabBtn(tab === 'preview')}>
             Preview
           </button>
+          <button type="button" onClick={() => setTab('label')} className={topTabBtn(tab === 'label')}>
+            Label
+          </button>
         </div>
       </div>
 
@@ -382,8 +386,6 @@ export function VariantEditTabs({
           data={data}
           onChange={setData}
           sync={sync}
-          // Family dropdown owns the name when a family is selected (same as New variant).
-          productNameEditable={!productId}
           familyName={product?.name ?? null}
           products={products.map((p) => ({ id: p.id, name: p.name }))}
           currentProductId={productId || null}
@@ -443,6 +445,25 @@ export function VariantEditTabs({
           assets={liveAssets}
           brandLogoUrl={settings.brand_logo_url}
           familyOverview={product?.description}
+        />
+      </div>
+
+      {/* Label — like Preview, kept laid out off-screen rather than hidden: the
+          label measures its own type to fit the panel, and `display: none` has
+          no layout to measure. */}
+      <div
+        className={tab === 'label' ? undefined : 'fixed left-[-120vw] top-0 pointer-events-none opacity-0'}
+        aria-hidden={tab !== 'label'}
+      >
+        <LabelTab
+          variant={variant}
+          family={liveTitle}
+          name={(data.name || '').trim() || liveShortCode || variant.name}
+          code={liveCode || variant.code}
+          productId={productId || null}
+          productSlug={product?.slug ?? null}
+          initialTemplateId={product?.label_template_id ?? null}
+          labelLogoUrl={settings.label_logo_url}
         />
       </div>
       </div>

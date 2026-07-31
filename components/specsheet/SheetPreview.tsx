@@ -1,12 +1,13 @@
 'use client';
 
 import {
+  certificationList,
   deriveIdentity,
   primaryLumen,
   type SpecSheetData,
   type TechRow,
 } from '@/lib/sku/specSheet';
-import { buildSku, skuColorName, skuDriverControlText, skuTrackName, skuProfileName, cctKelvinFromCustom } from '@/lib/sku/skuRules';
+import { buildSku, resolveColor, skuDriverControlText, skuTrackName, skuProfileName, cctKelvinFromCustom } from '@/lib/sku/skuRules';
 import { cctRange, criValue, beamValue, wattsValue } from '@/lib/sku/mapToLuken';
 import type { ProductAsset } from '@/lib/types';
 import { getLatestAssetUrl } from '@/lib/assets';
@@ -41,7 +42,7 @@ export function SheetPreview({
   const longCode = (r.longCode || shortCode || identity.code || '').trim();
   const code = shortCode;
   const description = identity.description;
-  const colorName = skuColorName(data.sku.color);
+  const colorName = resolveColor(data.sku).desc || '';
   const driverControl = skuDriverControlText(data.sku);
   const profileKindLabel =
     data.sku.profileKind === 'DIFF' ? 'Diffuser' : data.sku.profileKind === 'PRF' ? 'Profile' : '';
@@ -69,10 +70,7 @@ export function SheetPreview({
     .filter(Boolean)
     .join(' × ');
 
-  const certs = (data.iconList || '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const certs = certificationList(data);
 
   const manualTech = data.datosTecnicos.filter((t) => t.campo);
 
@@ -298,15 +296,25 @@ export function SheetPreview({
           </section>
         )}
 
-        {/* Dimensions drawing (dynamic) */}
+        {/* Dimensions drawing (dynamic) — framed like Photometry: the box hugs the
+            drawing instead of spanning the column, so a small drawing no longer
+            sits in a band of empty white. Capped in millimetres rather than pixels
+            because the sheet is laid out at 96dpi, which makes the cap the true
+            printed size in both the preview and the PDF. */}
         {dimensionsImage && (
           <section>
             <h2 className="text-[10px] font-semibold uppercase tracking-widest text-gray-500 border-b border-gray-300 pb-1 mb-2">
               Dimensions
             </h2>
-            <div className="break-inside-avoid w-full bg-white border border-gray-200 flex items-center justify-center overflow-hidden p-2">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={dimensionsImage} alt="Dimensions" className="max-h-[220px] w-auto object-contain" />
+            <div className="flex justify-start">
+              <div className="break-inside-avoid bg-white border border-gray-200 overflow-hidden p-2">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={dimensionsImage}
+                  alt="Dimensions"
+                  className="max-h-[25mm] max-w-[25mm] object-contain"
+                />
+              </div>
             </div>
           </section>
         )}

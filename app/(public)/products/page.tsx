@@ -52,7 +52,7 @@ export default async function ProductsPage({ searchParams }: ProductsPageProps) 
     // Categories keep catalog section order (Downlights → Spotlights → …).
     supabase.from('product_categories').select('*').order('sort_order'),
     // Families are listed A–Z by name (not sort_order / insertion order).
-    supabase.from('products').select('*').order('name'),
+    supabase.from('products').select('*').eq('is_active', true).order('name'),
   ]);
 
   const categories = (categoriesRes.data ?? []) as ProductCategory[];

@@ -9,7 +9,7 @@ import {
   normalizeSpecSheet,
   type SpecSheetData,
 } from '@/lib/sku/specSheet';
-import { buildSku } from '@/lib/sku/skuRules';
+import { SKU_RULES_VERSION, buildSku } from '@/lib/sku/skuRules';
 
 export async function createProduct(formData: FormData) {
   const supabase = await createClient();
@@ -118,6 +118,7 @@ async function cascadeProductRename(
         name,
         short_description: data.codeDescription || null,
         long_description: data.description || null,
+        sku_rules_version: SKU_RULES_VERSION,
       })
       .eq('id', variant.id);
 
@@ -197,6 +198,32 @@ export async function updateProduct(id: string, formData: FormData) {
   revalidatePath('/products');
   revalidatePath(`/products/${slug}`);
   if (current.slug !== slug) revalidatePath(`/products/${current.slug}`);
+  revalidatePath('/');
+  return { success: true };
+}
+
+/**
+ * Switch a whole family on/off. Variants keep their own is_active flag
+ * untouched — the public catalog hides them through the family, so turning it
+ * back on restores exactly what was published before.
+ */
+export async function setProductActive(id: string, isActive: boolean) {
+  const supabase = await createClient();
+  if (!supabase) return { error: 'Supabase not configured' };
+
+  const { data: product, error } = await supabase
+    .from('products')
+    .update({ is_active: isActive })
+    .eq('id', id)
+    .select('slug')
+    .single();
+
+  if (error) return { error: error.message };
+
+  revalidatePath('/admin/products');
+  revalidatePath('/admin/variants');
+  revalidatePath('/products');
+  if (product?.slug) revalidatePath(`/products/${product.slug}`);
   revalidatePath('/');
   return { success: true };
 }

@@ -20,6 +20,14 @@ export const PUBLIC_VARIANT_COLUMNS =
 export const PUBLIC_VARIANT_WITH_RELATIONS =
   'id, slug, name, code, short_description, long_description, category_id, product_id, mounting_type, ip_rating, light_source, power_w, lumens, efficacy_lm_per_w, cct_min, cct_max, cri, voltage, class, material, finish, dimensions, is_active, is_featured, created_at, updated_at, manufacturer, manufacturer_sku, control_types, environment, power_w_system, lumens_system, beam_angle, category:product_categories(*), product:products(*), assets:product_assets(*)' as const;
 
+/**
+ * Same as above but with the family as an inner join, so a filter like
+ * `.eq('product.is_active', true)` drops the variant instead of just nulling
+ * the embedded family.
+ */
+export const PUBLIC_VARIANT_FEATURED =
+  'id, slug, name, code, short_description, long_description, category_id, product_id, mounting_type, ip_rating, light_source, power_w, lumens, efficacy_lm_per_w, cct_min, cct_max, cri, voltage, class, material, finish, dimensions, is_active, is_featured, created_at, updated_at, manufacturer, manufacturer_sku, control_types, environment, power_w_system, lumens_system, beam_angle, category:product_categories(*), product:products!inner(*), assets:product_assets(*)' as const;
+
 /** Variant + relations for the detail page (family is an inner join). */
 export const PUBLIC_VARIANT_DETAIL =
   'id, slug, name, code, short_description, long_description, category_id, product_id, mounting_type, ip_rating, light_source, power_w, lumens, efficacy_lm_per_w, cct_min, cct_max, cri, voltage, class, material, finish, dimensions, is_active, is_featured, created_at, updated_at, manufacturer, manufacturer_sku, control_types, environment, power_w_system, lumens_system, beam_angle, category:product_categories(*), product:products!inner(*), skus:product_skus(*), assets:product_assets(*)' as const;

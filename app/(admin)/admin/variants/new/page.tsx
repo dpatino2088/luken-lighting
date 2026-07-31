@@ -13,8 +13,14 @@ import { PricingFields } from '@/components/admin/PricingFields';
 import { IdentityFields } from '@/components/specsheet/IdentityFields';
 import { useSpecSheetSync } from '@/components/specsheet/useSpecSheetSync';
 import { SheetPreview } from '@/components/specsheet/SheetPreview';
-import { applyFamilyName, createDefaultSpecSheet, withAutoLastUpdate, type SpecSheetData } from '@/lib/sku/specSheet';
-import { buildSku } from '@/lib/sku/skuRules';
+import {
+  applyFamilyName,
+  applyFooterDefault,
+  createDefaultSpecSheet,
+  withAutoLastUpdate,
+  type SpecSheetData,
+} from '@/lib/sku/specSheet';
+import { SKU_RULES_VERSION, buildSku } from '@/lib/sku/skuRules';
 import { specSheetToVariantFields, cctRange } from '@/lib/sku/mapToLuken';
 import { getSettings } from '@/app/(admin)/admin/settings/actions';
 import { toast } from '@/components/ui/Toast';
@@ -66,7 +72,10 @@ export default function NewVariantPage() {
       setCategories(catRes.data ?? []);
       setProducts(prodRes.data ?? []);
     });
-    getSettings().then((s) => setBrandLogoUrl(s.brand_logo_url));
+    getSettings().then((s) => {
+      setBrandLogoUrl(s.brand_logo_url);
+      setData((prev) => applyFooterDefault(prev, s.sheet_footer_note));
+    });
   }, []);
 
   // When a family is chosen, sync productName + SKU series (Prueba → PRU).
@@ -83,7 +92,7 @@ export default function NewVariantPage() {
 
   async function handleSubmit() {
     if (!data.productName.trim()) {
-      toast.error('Choose a product family (or type a product name) first.');
+      toast.error('Choose a product family first — it names the variant and sets the SKU series.');
       setTopTab('builder');
       return;
     }
@@ -115,6 +124,7 @@ export default function NewVariantPage() {
           distributor_price: distributorPrice ? Number(distributorPrice) : null,
           is_active: isActive,
           is_featured: isFeatured,
+          sku_rules_version: SKU_RULES_VERSION,
         })
         .select()
         .single();
@@ -261,7 +271,6 @@ export default function NewVariantPage() {
           data={data}
           onChange={setData}
           sync={sync}
-          productNameEditable={!selectedProductId}
           familyName={selectedProduct?.name ?? null}
           products={products.map((p) => ({ id: p.id, name: p.name }))}
           currentProductId={selectedProductId || null}

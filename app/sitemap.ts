@@ -26,7 +26,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // Products
   const { data: products } = await supabase
     .from('products')
-    .select('slug, updated_at');
+    .select('slug, updated_at')
+    .eq('is_active', true);
 
   const productPages = (products || []).map((product) => ({
     url: `${baseUrl}/products/${product.slug}`,
@@ -39,7 +40,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const { data: variants } = await supabase
     .from('product_variants')
     .select('slug, updated_at, product:products!inner(slug)')
-    .eq('is_active', true);
+    .eq('is_active', true)
+    .eq('product.is_active', true);
 
   const variantPages = (variants || []).map((variant: any) => ({
     url: `${baseUrl}/products/${variant.product.slug}/${variant.slug}`,

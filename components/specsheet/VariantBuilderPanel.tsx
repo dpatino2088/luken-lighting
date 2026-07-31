@@ -1,10 +1,11 @@
 'use client';
 
 import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
-import { SkuFields } from '@/components/specsheet/SkuFields';
+import { Section, SkuFields } from '@/components/specsheet/SkuFields';
 import { RelatedVariantsEditor } from '@/components/specsheet/RelatedVariantsEditor';
 import {
   applyFamilyName,
+  certificationList,
   DEFAULT_TECH_ROWS,
   SUBCATEGORY_OPTIONS,
   isAccessoriesType,
@@ -33,6 +34,8 @@ const SUBTABS: { id: SubTab; label: string }[] = [
   { id: 'tech', label: 'Technical data' },
   { id: 'notes', label: 'Notes' },
 ];
+
+const IP_OPTIONS = ['IP20', 'IP44', 'IP54', 'IP65', 'IP67', 'IP68'];
 
 const MATERIAL_OPTIONS = [
   'Aluminum',
@@ -69,14 +72,13 @@ const subTabBtn = (active: boolean) =>
  * Controlled SKU + spec-sheet builder (construction inputs). Parent owns `data`
  * and the `sync` (SKU↔identity auto-sync via useSpecSheetSync). The built
  * identity (Name / Code / descriptions) is shown in the Product tab, not here.
- * `productNameEditable` lets the New flow type a name when no family is chosen;
- * the Edit/family flows pass a fixed name.
+ * The product name is owned by the family picker above the panel — it is not
+ * asked again here, and it is what drives the SKU series (Draco → DRA).
  */
 export function VariantBuilderPanel({
   data,
   onChange,
   sync,
-  productNameEditable = true,
   /** Selected product-family name — Re-apply uses this so the series follows the family. */
   familyName = null,
   /** Families for the Related Variant picker. */
@@ -89,7 +91,6 @@ export function VariantBuilderPanel({
   data: SpecSheetData;
   onChange: Dispatch<SetStateAction<SpecSheetData>>;
   sync: SpecSheetSync;
-  productNameEditable?: boolean;
   familyName?: string | null;
   products?: { id: string; name: string }[];
   currentProductId?: string | null;
@@ -196,8 +197,6 @@ export function VariantBuilderPanel({
     onChange((prev) => ({ ...prev, datosTecnicos: prev.datosTecnicos.filter((_, idx) => idx !== i) }));
   const resetTech = () =>
     onChange((prev) => ({ ...prev, datosTecnicos: DEFAULT_TECH_ROWS.map((r) => ({ ...r })) }));
-
-  const skuPreview = useMemo(() => buildSku(data.sku), [data.sku]);
 
   // Lumen (system luminous flux) is a General-data attribute, edited here and
   // stored in the "System lumens" Technical-data row (→ variant.lumens_system).
@@ -320,8 +319,8 @@ export function VariantBuilderPanel({
               <div>
                 <h3 className="text-sm font-semibold uppercase tracking-wide">SKU generator</h3>
                 <p className="mt-0.5 text-[11px] text-gray-500">
-                  Builds the SKU, name and descriptions (shown in the <strong>Product</strong> tab). SKU:{' '}
-                  <span className="font-mono">{skuPreview.shortCode || '—'}</span>
+                  Builds the name, the SKU and the descriptions, shown in the{' '}
+                  <strong>Product</strong> tab.
                 </p>
               </div>
               <button
@@ -346,44 +345,22 @@ export function VariantBuilderPanel({
               trackMode={trackMode}
               profileMode={profileMode}
               subcategory={data.subcategory}
+              productName={data.productName}
             />
           </div>
 
-          {/* General fields */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-5 border-t border-gray-100 pt-8">
-            <div className="sm:col-span-2">
-              <label className={labelClass}>Product name (drives series: Draco → DRA)</label>
-              <input
-                className={fieldClass + (productNameEditable ? '' : ' bg-gray-100 text-gray-500')}
-                value={data.productName}
-                onChange={(e) => set('productName', e.target.value)}
-                readOnly={!productNameEditable}
-              />
-            </div>
-            <div>
-              <label className={labelClass}>Brand / Line</label>
-              <input className={fieldClass} value={data.brand} onChange={(e) => set('brand', e.target.value)} />
-            </div>
-            <div>
-              <label className={labelClass}>Last updated</label>
-              <input
-                className={fieldClass + ' bg-gray-100 text-gray-500'}
-                value={data.lastUpdate || '— set automatically on save —'}
-                readOnly
-                tabIndex={-1}
-                title="Updated automatically when you save the builder"
-              />
-            </div>
+          {/* The body of the piece: what it is made of, what it survives, how big
+              it is. Drawn as a Builder block because it is answered in the same
+              pass as the SKU, and the IP set here is the one the sheet lists
+              under Certifications. */}
+          <Section title="Characteristics">
             <div>
               <label className={labelClass}>IP rating</label>
               <AdminSelect
                 aria-label="IP rating"
                 value={data.ipRating}
                 onChange={(v) => set('ipRating', v)}
-                options={['IP20', 'IP44', 'IP54', 'IP65', 'IP67', 'IP68'].map((ip) => ({
-                  value: ip,
-                  label: ip,
-                }))}
+                options={IP_OPTIONS.map((ip) => ({ value: ip, label: ip }))}
               />
             </div>
             <div>
@@ -413,31 +390,23 @@ export function VariantBuilderPanel({
                 ]}
               />
             </div>
-          </div>
-
-          <div>
-            <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-4 border-t border-gray-100 pt-8">
-              Dimensions
-            </h4>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-5">
-              <div>
-                <label className={labelClass}>Width (mm)</label>
-                <input className={fieldClass} type="number" value={data.ancho} onChange={(e) => set('ancho', e.target.value)} />
-              </div>
-              <div>
-                <label className={labelClass}>Height (mm)</label>
-                <input className={fieldClass} type="number" value={data.alto} onChange={(e) => set('alto', e.target.value)} />
-              </div>
-              <div>
-                <label className={labelClass}>Depth (mm)</label>
-                <input className={fieldClass} type="number" value={data.fondo} onChange={(e) => set('fondo', e.target.value)} />
-              </div>
-              <div>
-                <label className={labelClass}>Weight (kg)</label>
-                <input className={fieldClass} type="number" value={data.peso} onChange={(e) => set('peso', e.target.value)} />
-              </div>
+            <div>
+              <label className={labelClass}>Width (mm)</label>
+              <input className={fieldClass} type="number" value={data.ancho} onChange={(e) => set('ancho', e.target.value)} />
             </div>
-          </div>
+            <div>
+              <label className={labelClass}>Height (mm)</label>
+              <input className={fieldClass} type="number" value={data.alto} onChange={(e) => set('alto', e.target.value)} />
+            </div>
+            <div>
+              <label className={labelClass}>Depth (mm)</label>
+              <input className={fieldClass} type="number" value={data.fondo} onChange={(e) => set('fondo', e.target.value)} />
+            </div>
+            <div>
+              <label className={labelClass}>Weight (kg)</label>
+              <input className={fieldClass} type="number" value={data.peso} onChange={(e) => set('peso', e.target.value)} />
+            </div>
+          </Section>
 
         </div>
 
@@ -533,16 +502,46 @@ export function VariantBuilderPanel({
         {/* Notes */}
         <div hidden={tab !== 'notes'} className="bg-white border border-gray-200 p-5 space-y-4">
           <div>
-            <label className={labelClass}>Certifications (comma separated: IP20, CE…)</label>
-            <input className={fieldClass} value={data.iconList} onChange={(e) => set('iconList', e.target.value)} />
+            <label className={labelClass}>Certifications</label>
+            {/* The IP sits in front of the field, not inside it: it is answered in
+                Characteristics and printing it twice is the thing to avoid. */}
+            <div className="flex items-stretch gap-2">
+              <span
+                className={
+                  'flex shrink-0 items-center border px-3 text-sm ' +
+                  (data.ipRating
+                    ? 'border-gray-300 bg-gray-100 font-mono text-gray-700'
+                    : 'border-dashed border-gray-300 text-gray-400')
+                }
+                title="From Characteristics → IP rating"
+              >
+                {data.ipRating || 'No IP set'}
+              </span>
+              <input
+                className={fieldClass}
+                value={data.iconList}
+                onChange={(e) => set('iconList', e.target.value)}
+                placeholder="CE, RoHS, ETL…"
+              />
+            </div>
+            <p className="mt-1 text-[11px] text-gray-500">
+              The sheet prints{' '}
+              <span className="font-mono">{certificationList(data).join(' · ') || '—'}</span>. The IP
+              comes from <strong>Characteristics</strong>; add the rest here, separated by commas.
+            </p>
           </div>
           <div>
             <label className={labelClass}>Control notes</label>
             <textarea rows={3} className={fieldClass} value={data.controlNotes} onChange={(e) => set('controlNotes', e.target.value)} />
           </div>
           <div>
-            <label className={labelClass}>Legal note / footer</label>
+            <label className={labelClass}>Footer web</label>
             <input className={fieldClass} value={data.footerNote} onChange={(e) => set('footerNote', e.target.value)} />
+            <p className="mt-1 text-[11px] text-gray-500">
+              Prefilled from <strong>Settings → Spec Sheet</strong> so every sheet carries the same
+              address. Change it here only for a one-off exception; clearing it lets the Settings
+              value come back.
+            </p>
           </div>
         </div>
     </div>

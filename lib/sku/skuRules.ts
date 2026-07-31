@@ -4,6 +4,25 @@
 //  options, translation maps and the SKU / description builder.
 // ──────────────────────────────────────────────────────────────────────────
 
+/**
+ * Build number of the naming rules.
+ *
+ * A variant row stores what these rules generated — code, name and both
+ * descriptions — so the catalog can be listed and searched without rebuilding
+ * anything. That copy goes stale the moment a rule changes here.
+ *
+ * Bump this in the same change that alters a generated value. Rows carry the
+ * version that wrote them, and the admin rewrites whatever is behind on its own,
+ * so a rule change reaches the catalog without anyone remembering to re-save 24
+ * variants one by one.
+ *
+ * 1 · Trim and finish before source/socket · flux placed after the socket in the
+ *     description · Short SKU drops MOD and carries CCT + beam.
+ * 2 · Version reaches the Name and the Short SKU, so a duplicate marked COPY is
+ *     visible in the list instead of hiding at the tail of the Long SKU.
+ */
+export const SKU_RULES_VERSION = 2;
+
 export interface SkuOption {
   /** Code stored in the SKU / used as the option value. */
   value: string;
@@ -34,6 +53,8 @@ export interface SkuState {
   socketCustom: string; // custom socket when socket === 'CUSTOM'
   trim: string;
   color: string;
+  /** Free-text finish when color === 'CUSTOM' (e.g. RAL 9016, Copper brushed). */
+  colorCustom: string;
   cri: string;
   criCustom: string;  // custom CRI (e.g. 97) when cri === 'CUSTOM'
   cct: string;
@@ -68,6 +89,7 @@ export const EMPTY_SKU_STATE: SkuState = {
   socketCustom: '',
   trim: '',
   color: '',
+  colorCustom: '',
   cri: '',
   criCustom: '',
   cct: '',
@@ -219,14 +241,7 @@ function translate(map: TMap, key: string): string | null {
   return dict[key] ?? key;
 }
 
-/** Human label for a color code (e.g. "WH" → "White", "WH/BK" → "White trim / Black diffuser"). */
-export function skuColorName(code: string): string {
-  const c = code.trim();
-  if (!c) return '';
-  return (T.color as Record<string, string>)[c] ?? c;
-}
-
-/** Reverse: finish label → SKU color code (e.g. "White trim / Black diffuser" → "WH/BK"). */
+/** Finish label → SKU color code (e.g. "White trim / Black diffuser" → "WH/BK"). */
 export function skuColorCodeFromFinish(finish: string | null | undefined): string {
   const f = (finish || '').trim();
   if (!f) return '';
@@ -249,14 +264,21 @@ export function extractSkuColorCode(
 
   const raw = (code || '').trim();
   if (!raw) return '';
+  const segment = (c: string) =>
+    new RegExp(`(?:^|-)${c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:-|$)`, 'i').test(raw);
+
   const codes = Object.keys(T.color as Record<string, string>).sort(
     (a, b) => b.length - a.length
   );
   for (const c of codes) {
-    const escaped = c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    if (new RegExp(`(?:^|-)${escaped}(?:-|$)`, 'i').test(raw)) return c;
+    if (segment(c)) return c;
   }
-  return '';
+
+  // A finish off the list: the Builder wrote its letters and digits into the SKU,
+  // so when that turns up as a segment here it is this variant's finish code. The
+  // check keeps a stored finish from putting a code on a SKU that never carried one.
+  const custom = customColorCode(finish);
+  return custom && segment(custom) ? custom : '';
 }
 
 /** Human label for a track code (e.g. "MAG48" → "48V Magnetic track"). */
@@ -481,7 +503,33 @@ export const COLOR_OPTIONS: SkuOption[] = [
   { value: 'BK/WH', label: 'BK/WH – Black trim · White diffuser', group: 'Two-tone (Trim / Diffuser)' },
   { value: 'BZ/WH', label: 'BZ/WH – Bronze trim · White diffuser', group: 'Two-tone (Trim / Diffuser)' },
   { value: 'GD/WH', label: 'GD/WH – Gold trim · White diffuser', group: 'Two-tone (Trim / Diffuser)' },
+  { value: 'CUSTOM', label: 'Custom — enter below', group: 'Custom' },
 ];
+
+/**
+ * Code segment for a finish that is not on the list.
+ *
+ * The SKU is read by splitting on hyphens, so a finish typed as "RAL 9016 - matt"
+ * cannot keep its spaces or its dash: the code keeps the letters and digits and the
+ * description keeps the words as typed. Shared with the reader below, so a code
+ * written into a SKU is one the catalog can still recognise.
+ */
+export function customColorCode(raw: string | null | undefined): string {
+  return (raw || '').trim().toUpperCase().replace(/[^A-Z0-9]+/g, '').slice(0, 10);
+}
+
+/** Resolve the finish SKU code + label: a standard code, or free text. */
+export function resolveColor(state: Pick<SkuState, 'color' | 'colorCustom'>): {
+  code: string;
+  desc: string | null;
+} {
+  if (state.color === 'CUSTOM') {
+    const raw = (state.colorCustom || '').trim();
+    return { code: customColorCode(raw), desc: raw || null };
+  }
+  const code = (state.color || '').trim();
+  return { code, desc: translate('color', code) };
+}
 
 export const CRI_OPTIONS: SkuOption[] = [
   { value: 'CR80', label: 'CR80 – CRI 80+' },
@@ -581,6 +629,27 @@ export const VERSION_OPTIONS: SkuOption[] = [
   { value: 'CUSTOM', label: 'Custom — enter below' },
 ];
 
+/** The Version segment a duplicate carries until it is given a real difference. */
+export const COPY_MARKER = 'COPY';
+
+/** The marker for the nth copy: COPY, COPY2, COPY3… */
+export function copyMarker(n = 1): string {
+  return n <= 1 ? COPY_MARKER : `${COPY_MARKER}${n}`;
+}
+
+/** Whether this SKU is still marked as a duplicate of another variant. */
+export function hasCopyMarker(state: Pick<SkuState, 'version' | 'versionCustom'>): boolean {
+  return (
+    state.version === 'CUSTOM' &&
+    new RegExp(`^${COPY_MARKER}\\d*$`, 'i').test((state.versionCustom || '').trim())
+  );
+}
+
+/** Whether a code was left by the duplicate action (…-COPY, …-COPY2). */
+export function looksLikeCopy(code: string | null | undefined): boolean {
+  return new RegExp(`-${COPY_MARKER}\\d*$`, 'i').test((code || '').trim());
+}
+
 /** Resolve version SKU code + description (standard V2/V3/V4 or custom). */
 export function resolveVersion(state: Pick<SkuState, 'version' | 'versionCustom'>): {
   code: string;
@@ -609,6 +678,11 @@ export interface SkuSegment {
 }
 
 export interface SkuResult {
+  /**
+   * The commercial code: what a project asks for. It is not a prefix of the long
+   * one — it leaves out the engineering segments (CRI, power, driver) that sit
+   * between the ones it keeps.
+   */
   shortCode: string;
   longCode: string;
   /** Short SKU raw segments after the series, space-joined (e.g. "65R GU10 WH"). */
@@ -619,6 +693,14 @@ export interface SkuResult {
   shortDesc: string;
   longDesc: string;
   segments: SkuSegment[];
+  /**
+   * How many description tokens come before the luminous flux.
+   *
+   * The flux is not a SKU segment — it is read from the Technical data — but the
+   * Builder asks for it between the socket and the CRI, so that is where it reads
+   * in the description. `composeAutoDescription` splices it in here.
+   */
+  fluxSlot: number;
 }
 
 /**
@@ -649,6 +731,8 @@ export function buildSku(state: SkuState): SkuResult {
   const add = (val: string, inShort: boolean, desc: string | null, inName = false) => {
     if (val) segs.push({ val, inShort, desc, inName });
   };
+  /** Description tokens written so far — the flux slot is one of these counts. */
+  const describedSoFar = () => segs.filter((s) => s.desc).length;
 
   // ── Accessory mode ──────────────────────────────────────────────────────
   // Shape ACC → SKU is always SERIES-ACC-{type}-… (e.g. ORI-ACC-CLIP-WH).
@@ -673,10 +757,13 @@ export function buildSku(state: SkuState): SkuResult {
       }
     }
 
-    add(state.color.trim(), true, translate('color', state.color.trim()), true);
+    {
+      const col = resolveColor(state);
+      add(col.code, true, col.desc, true);
+    }
     {
       const ver = resolveVersion(state);
-      if (ver.code) add(ver.code, false, ver.desc);
+      if (ver.code) add(ver.code, true, ver.desc, true);
     }
 
     const shortSegs = segs.filter((s) => s.inShort).map((s) => s.val);
@@ -701,6 +788,9 @@ export function buildSku(state: SkuState): SkuResult {
       shortDesc,
       longDesc,
       segments: segs,
+      // An accessory emits no light, so nothing is asked before the flux: should
+      // one ever be typed in, it reads last.
+      fluxSlot: describedSoFar(),
     };
   }
 
@@ -746,20 +836,41 @@ export function buildSku(state: SkuState): SkuResult {
     if (mCode) add(mCode, true, mounting);
   }
 
-  // 4 · Source / socket / trim / color (short + long)
+  // 4 · Trim / colour, then source / socket (short + long).
+  //
+  // The order follows the Builder: trim and finish are asked with the body of the
+  // piece, in Identity & format, and the light comes after. A code that reads in
+  // the order it was filled in is one that can be checked against the form.
+  add(state.trim.trim(), true, translate('trim', state.trim.trim()), true);
+  {
+    // Finish — a standard code or one made from the finish as typed.
+    const col = resolveColor(state);
+    add(col.code, true, col.desc, true);
+  }
   add(state.source.trim(), true, translate('source', state.source.trim()), true);
   // Socket — standard code or a custom socket type (e.g. GX53, R7s).
+  //
+  // A lamp base belongs in the Short SKU: it says which lamp fits. MOD does not —
+  // an integrated module is already implied by the LED source, so it only made the
+  // commercial code longer.
   if (state.socket === 'CUSTOM') {
     const raw = (state.socketCustom || '').trim();
     const code = raw.toUpperCase().replace(/\s+/g, '');
     if (code) add(code, true, `${raw} socket`);
   } else {
-    add(state.socket.trim(), true, translate('socket', state.socket.trim()));
+    const socket = state.socket.trim();
+    add(socket, socket !== 'MOD', translate('socket', socket));
   }
-  add(state.trim.trim(), true, translate('trim', state.trim.trim()), true);
-  add(state.color.trim(), true, translate('color', state.color.trim()), true);
 
-  // 5 · Long-only segments
+  // The Builder asks for Lumen right here, after the socket and before the CRI.
+  const fluxSlot = describedSoFar();
+
+  // 5 · The light itself
+  //
+  // CCT and beam are in the Short SKU: they are what a project asks for by name
+  // ("3000K, 15°") and what distinguishes two otherwise identical fixtures on a
+  // drawing. CRI, power and the driver stay long-only — they are engineering.
+  //
   // CRI — standard code or a custom value (e.g. 97).
   if (state.cri === 'CUSTOM') {
     const n = (state.criCustom || '').replace(/[^0-9]/g, '');
@@ -774,18 +885,18 @@ export function buildSku(state: SkuState): SkuResult {
       const isRange = max != null && max !== min;
       const code = isRange ? 'CTUN' : `CT${Math.round(min / 100)}`;
       const label = isRange ? `${min}K–${max}K tunable` : `${min}K`;
-      add(code, false, label);
+      add(code, true, label);
     }
   } else {
-    add(state.cct.trim(), false, translate('cct', state.cct.trim()));
+    add(state.cct.trim(), true, translate('cct', state.cct.trim()));
   }
 
   // Optic / beam — standard code or a custom angle (e.g. 11°, 13°).
   if (state.optic === 'CUSTOM') {
     const deg = (state.opticCustom || '').replace(/[^0-9.]/g, '');
-    if (deg) add(`OP${deg}`, false, `${deg}° beam`);
+    if (deg) add(`OP${deg}`, true, `${deg}° beam`);
   } else {
-    add(state.optic.trim(), false, translate('optic', state.optic.trim()));
+    add(state.optic.trim(), true, translate('optic', state.optic.trim()));
   }
 
   // Watts — standard code or a custom wattage (e.g. 18).
@@ -805,15 +916,18 @@ export function buildSku(state: SkuState): SkuResult {
 
   add(state.ctrl.trim(), false, translate('ctrl', state.ctrl.trim()));
   {
+    // Version rides in the Name and the Short SKU: a V2 is a different thing to
+    // order than a V1, and a duplicate marked COPY has to be recognisable in the
+    // Variants list at a glance.
     const ver = resolveVersion(state);
-    if (ver.code) add(ver.code, false, ver.desc);
+    if (ver.code) add(ver.code, true, ver.desc, true);
   }
 
   const shortSegs = segs.filter((s) => s.inShort).map((s) => s.val);
   const longSegs = segs.map((s) => s.val);
   // Name body = short raw segments without the leading series code.
   const shortBody = (series && shortSegs[0] === series ? shortSegs.slice(1) : shortSegs).join(' ');
-  // Concise commercial name body: size + source + trim + color (no series/socket).
+  // Concise commercial name body: size + trim + color + source (no series/socket).
   const nameBody = segs.filter((s) => s.inName).map((s) => s.val).join(' ');
   const shortDesc = segs
     .filter((s) => s.inShort && s.desc)
@@ -832,5 +946,6 @@ export function buildSku(state: SkuState): SkuResult {
     shortDesc,
     longDesc,
     segments: segs,
+    fluxSlot,
   };
 }

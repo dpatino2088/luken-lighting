@@ -5,7 +5,7 @@
 // ──────────────────────────────────────────────────────────────────────────
 
 import type { SkuState } from './skuRules';
-import { buildSku, skuColorName, cctKelvinFromCustom } from './skuRules';
+import { buildSku, resolveColor, cctKelvinFromCustom } from './skuRules';
 import { createDefaultSpecSheet, type SpecSheetData } from './specSheet';
 
 function numFrom(code: string): number | null {
@@ -202,7 +202,7 @@ export function specSheetToVariantFields(data: SpecSheetData, environment: strin
     beam_angle: beamValue(data.sku.optic === 'CUSTOM' ? data.sku.opticCustom : data.sku.optic),
     voltage:
       (data.sku.driverV === 'CUSTOM' ? data.sku.driverVCustom.trim() : data.sku.driverV.trim()) || null,
-    finish: skuColorName(data.sku.color) || null,
+    finish: resolveColor(data.sku).desc,
     material: data.material.trim() || null,
     ip_rating: data.ipRating.trim() || null,
     class: data.electricalClass.trim() || null,

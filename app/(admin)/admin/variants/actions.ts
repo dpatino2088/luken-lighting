@@ -5,15 +5,20 @@ import { createAdminClient } from '@/lib/supabase/admin';
 import { getCurrentUserRole } from '@/lib/auth';
 import { revalidatePath } from 'next/cache';
 import { slugify } from '@/lib/utils';
-import { buildSku } from '@/lib/sku/skuRules';
+import { SKU_RULES_VERSION, buildSku, hasCopyMarker, looksLikeCopy } from '@/lib/sku/skuRules';
 import { seedSpecSheetFromVariant, specSheetToVariantFields } from '@/lib/sku/mapToLuken';
 import {
+  applyCopyMarker,
+  applyFooterDefault,
+  clearCopyMarker,
   normalizeSpecSheet,
   syncIdentityFromSku,
   withAutoLastUpdate,
   type SpecSheetData,
 } from '@/lib/sku/specSheet';
+import { getSettings } from '@/app/(admin)/admin/settings/actions';
 import type { DatasheetBackfillPlan, DatasheetJob } from '@/lib/specsheet/datasheetBackfill';
+import type { SkuIdentity, SkuRebuildPlan, SkuRebuildRow } from '@/lib/sku/skuRebuild';
 import type { ProductAsset } from '@/lib/types';
 
 const IMAGE_BUCKET_TYPES = new Set(['image', 'installed_image', 'dimensions_image', 'photometric_image']);
@@ -86,6 +91,25 @@ export async function saveVariantBuilder(
   // left over from a previous configuration (manual link flags / old sheet data).
   data = syncIdentityFromSku(withAutoLastUpdate(data));
 
+  // A duplicate carries a COPY segment only so it does not collide with the
+  // variant it came from. The moment it has a difference of its own — another
+  // optic, CCT, finish — the mark has done its job, so saving drops it and the
+  // copy reads like any other variant. Nothing to remember, nothing to re-apply.
+  if (hasCopyMarker(data.sku)) {
+    const bare = clearCopyMarker(data);
+    const bareBuilt = buildSku(bare.sku);
+    const bareCode = (bare.code || bareBuilt.longCode || bareBuilt.shortCode).trim();
+    if (bareCode) {
+      const { data: bareOwner } = await supabase
+        .from('product_variants')
+        .select('id')
+        .eq('code', bareCode)
+        .neq('id', variantId)
+        .limit(1);
+      if (!bareOwner?.length) data = bare;
+    }
+  }
+
   const r = buildSku(data.sku);
   // Long SKU wins — short alone is not unique across optic/CCT/finish variants.
   const code = (data.code || r.longCode || r.shortCode).trim();
@@ -96,10 +120,26 @@ export async function saveVariantBuilder(
   // customers or indexed by search engines) must survive a Long-SKU edit.
   const { data: current } = await supabase
     .from('product_variants')
-    .select('slug')
+    .select('slug, is_active')
     .eq('id', variantId)
     .maybeSingle();
-  const slug = current?.slug?.trim() || slugify(code);
+  const currentSlug = (current?.slug || '').trim();
+  // One exception: a copy's URL was minted from its COPY code. While it has never
+  // been public there is nobody to break, so it gets a clean one instead of
+  // carrying "-copy" for the rest of its life.
+  const slug = await (async () => {
+    if (!currentSlug) return slugify(code);
+    if (current?.is_active !== false || !looksLikeCopy(currentSlug)) return currentSlug;
+    const wanted = slugify(code);
+    if (!wanted || wanted === currentSlug) return currentSlug;
+    const { data: slugOwner } = await supabase
+      .from('product_variants')
+      .select('id')
+      .eq('slug', wanted)
+      .neq('id', variantId)
+      .limit(1);
+    return slugOwner?.length ? currentSlug : wanted;
+  })();
   if (!slug) return { error: 'Could not build a URL slug from the SKU code.' };
 
   // With the slug frozen, the UNIQUE(slug) index no longer guards Long-SKU
@@ -144,6 +184,7 @@ export async function saveVariantBuilder(
     control_types: vf.control_types,
     mounting_type: vf.mounting_type,
     dimensions: vf.dimensions,
+    sku_rules_version: SKU_RULES_VERSION,
   };
 
   if (rel) {
@@ -435,6 +476,31 @@ async function allocateCopyCode(
 }
 
 /**
+ * Find the copy marker (COPY, COPY2, …) that gives this sheet a free Long SKU.
+ *
+ * The marker lives in the SKU, so the copy generates its own identity instead of
+ * carrying a patched string the next save would overwrite.
+ */
+async function allocateCopyMarker(
+  supabase: AdminSupabase,
+  sheet: SpecSheetData
+): Promise<{ marked: SpecSheetData; code: string; slug: string; n: number } | null> {
+  for (let n = 1; n <= 99; n++) {
+    const marked = applyCopyMarker(sheet, n);
+    const code = marked.code.trim();
+    if (!code) return null;
+    const slug = slugify(code);
+    if (!slug) return null;
+    const [{ data: byCode }, { data: bySlug }] = await Promise.all([
+      supabase.from('product_variants').select('id').eq('code', code).limit(1),
+      supabase.from('product_variants').select('id').eq('slug', slug).limit(1),
+    ]);
+    if (!byCode?.length && !bySlug?.length) return { marked, code, slug, n };
+  }
+  return null;
+}
+
+/**
  * Full duplicate of a variant: row fields (incl. pricing), SKUs, spec sheet,
  * and every asset file (storage objects are copied, not shared).
  * New copy starts inactive so it can be edited before going public.
@@ -450,28 +516,24 @@ export async function duplicateVariant(variantId: string) {
     .single();
   if (srcErr || !source) return { error: srcErr?.message || 'Variant not found' };
 
-  // Prefer Long SKU from the builder sheet — that is what distinguishes copies
-  // (optic degree, CCT, color, …) when the Short SKU stem is identical.
-  let baseCode = source.code || source.name || 'VARIANT';
-  {
-    const { data: sheetRow } = await supabase
-      .from('spec_sheets')
-      .select('data, code')
-      .eq('variant_id', variantId)
-      .is('deleted_at', null)
-      .order('updated_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    const sheetData = sheetRow?.data as { sku?: Parameters<typeof buildSku>[0] } | null;
-    if (sheetData?.sku) {
-      const built = buildSku(sheetData.sku);
-      baseCode = built.longCode || built.shortCode || sheetRow?.code || baseCode;
-    } else if (sheetRow?.code) {
-      baseCode = sheetRow.code;
-    }
-  }
+  const { data: sheetRow } = await supabase
+    .from('spec_sheets')
+    .select('data, code')
+    .eq('variant_id', variantId)
+    .is('deleted_at', null)
+    .order('updated_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
 
-  const { code, slug } = await allocateCopyCode(supabase, baseCode);
+  // Identity comes from the marked SKU when there is a sheet to build it from, so
+  // the copy's stored code is the one it regenerates. Sheet-less variants (typed
+  // or imported identity) keep the old string suffix — there is nothing to build.
+  const sheet = sheetRow?.data
+    ? normalizeSpecSheet(sheetRow.data as Partial<SpecSheetData>)
+    : null;
+  const allocated = sheet ? await allocateCopyMarker(supabase, sheet) : null;
+  const { code, slug } =
+    allocated ?? (await allocateCopyCode(supabase, source.code || source.name || 'VARIANT'));
 
   const {
     id: _id,
@@ -484,7 +546,14 @@ export async function duplicateVariant(variantId: string) {
     ...fields,
     code,
     slug,
-    name: source.name ? `${source.name} (copy)` : code,
+    name: allocated
+      ? allocated.marked.name || code
+      : source.name
+        ? `${source.name} (copy)`
+        : code,
+    short_description: allocated ? allocated.marked.codeDescription : source.short_description,
+    long_description: allocated ? allocated.marked.description : source.long_description,
+    sku_rules_version: SKU_RULES_VERSION,
     is_active: false,
     is_featured: false,
   };
@@ -536,22 +605,18 @@ export async function duplicateVariant(variantId: string) {
     if (sheets?.length) {
       const { data: userRes } = await supabase.auth.getUser();
       const { error: sheetErr } = await supabase.from('spec_sheets').insert(
-        sheets.map((sheet) => {
-          const data =
-            sheet.data && typeof sheet.data === 'object'
-              ? JSON.parse(JSON.stringify(sheet.data))
-              : sheet.data;
-          if (data && typeof data === 'object') {
-            if ('code' in data) (data as Record<string, unknown>).code = code;
-            if ('name' in data && typeof (data as Record<string, unknown>).name === 'string') {
-              (data as Record<string, unknown>).name = insertPayload.name;
-            }
-          }
+        sheets.map((row) => {
+          // The marker goes into the SKU, so the sheet generates the copy's code
+          // on its own. Without it the copy would rebuild its source's identity
+          // and no save would ever go through.
+          const data = allocated
+            ? applyCopyMarker(normalizeSpecSheet(row.data as Partial<SpecSheetData>), allocated.n)
+            : row.data;
           return {
             variant_id: newId,
-            product_id: sheet.product_id ?? source.product_id ?? null,
-            product_name: sheet.product_name,
-            code,
+            product_id: row.product_id ?? source.product_id ?? null,
+            product_name: row.product_name,
+            code: allocated ? allocated.code : code,
             data,
             created_by: userRes.user?.id ?? null,
           };
@@ -623,14 +688,18 @@ export async function duplicateVariant(variantId: string) {
  * inserts the new asset and revalidates the public product page.
  */
 /**
- * Variants with no datasheet asset, with everything needed to render their sheet.
+ * Variants whose datasheet has to be produced, with everything needed to render it.
+ *
+ * By default those are the variants with no datasheet asset. Pass `variantIds` to
+ * rebuild specific sheets instead — after a code change, an existing PDF still
+ * shows the previous one.
  *
  * The PDF is produced from the live Preview DOM, so the actual export has to run
  * in the browser; this action only builds the work list.
  */
-export async function listVariantsMissingDatasheet(): Promise<
-  { error: string } | DatasheetBackfillPlan
-> {
+export async function listVariantsMissingDatasheet(
+  variantIds?: string[]
+): Promise<{ error: string } | DatasheetBackfillPlan> {
   const role = await getCurrentUserRole();
   if (role !== 'admin' && role !== 'editor') {
     return { error: 'Unauthorized' };
@@ -646,7 +715,8 @@ export async function listVariantsMissingDatasheet(): Promise<
   ]);
 
   const covered = new Set((datasheets || []).map((d) => d.variant_id).filter(Boolean));
-  const pending = (variants || []).filter((v) => !covered.has(v.id));
+  const wanted = variantIds ? new Set(variantIds) : null;
+  const pending = (variants || []).filter((v) => (wanted ? wanted.has(v.id) : !covered.has(v.id)));
   if (pending.length === 0) {
     return { jobs: [], brandLogoUrl: null };
   }
@@ -682,13 +752,20 @@ export async function listVariantsMissingDatasheet(): Promise<
 
   const familyById = new Map((products || []).map((p) => [p.id, p]));
 
+  // app_settings is a key/value table: it has no brand_logo_url column, so
+  // querying one returned nothing and backfilled sheets came out without a logo.
+  const settings = await getSettings();
+
   const jobs: DatasheetJob[] = pending.map((variant) => {
     const family = variant.product_id ? familyById.get(variant.product_id) : undefined;
     const familyName = family?.name || variant.name || '';
     const raw = sheetByVariant.get(variant.id);
-    const data = raw
-      ? normalizeSpecSheet(raw as Partial<SpecSheetData>)
-      : seedSpecSheetFromVariant(variant, familyName);
+    const data = applyFooterDefault(
+      raw
+        ? normalizeSpecSheet(raw as Partial<SpecSheetData>)
+        : seedSpecSheetFromVariant(variant, familyName),
+      settings.sheet_footer_note
+    );
     return {
       variantId: variant.id,
       code: data.code || variant.code || '',
@@ -698,13 +775,328 @@ export async function listVariantsMissingDatasheet(): Promise<
     };
   });
 
-  const { data: settings } = await supabase
-    .from('app_settings')
-    .select('brand_logo_url')
-    .limit(1)
-    .maybeSingle();
+  return { jobs, brandLogoUrl: settings.brand_logo_url };
+}
 
-  return { jobs, brandLogoUrl: settings?.brand_logo_url ?? null };
+/** A variant ready to be rewritten, with the sheet row that has to follow it. */
+type RebuildWrite = SkuIdentity & {
+  variantId: string;
+  sheetId: string;
+  data: SpecSheetData;
+};
+
+/**
+ * Give a colliding copy its own identity by marking it in the SKU, and write the
+ * marked sheet back into the pending write. Returns null when no free marker fits.
+ */
+function markCopyForRebuild(
+  write: RebuildWrite,
+  claimed: Map<string, string>,
+  variantId: string
+): SkuIdentity | null {
+  for (let n = 1; n <= 99; n++) {
+    const marked = applyCopyMarker(write.data, n);
+    const code = marked.code.trim();
+    if (!code) return null;
+    const owner = claimed.get(code);
+    if (owner && owner !== variantId) continue;
+
+    write.data = marked;
+    write.code = code;
+    write.name = (marked.name || marked.productName).trim() || code;
+    write.shortDescription = marked.codeDescription.trim();
+    write.longDescription = marked.description.trim();
+    return {
+      code: write.code,
+      name: write.name,
+      shortDescription: write.shortDescription,
+      longDescription: write.longDescription,
+    };
+  }
+  return null;
+}
+
+/**
+ * Read every variant and work out the identity the current rules would give it.
+ *
+ * The four values are computed exactly as `saveVariantBuilder` computes them, so
+ * a rebuild lands on the same code, name and descriptions as opening the variant
+ * and pressing Save — the batch cannot drift from a hand-made save. A variant
+ * whose Name or Code was taken over by hand keeps it: `syncIdentityFromSku`
+ * honours the sheet's link flags.
+ */
+async function readSkuRebuild(
+  supabase: NonNullable<Awaited<ReturnType<typeof createClient>>>
+): Promise<{ plan: SkuRebuildPlan; writes: RebuildWrite[]; scannedIds: string[] }> {
+  const [{ data: variants }, { data: sheets }, { data: products }] = await Promise.all([
+    supabase
+      .from('product_variants')
+      .select('id, code, name, slug, short_description, long_description, product_id')
+      .order('code'),
+    supabase
+      .from('spec_sheets')
+      .select('id, variant_id, data, updated_at')
+      .is('deleted_at', null)
+      .order('updated_at', { ascending: false }),
+    supabase.from('products').select('id, name'),
+  ]);
+
+  // Ordered newest-first, so the first row per variant is the sheet in use.
+  const sheetByVariant = new Map<string, { id: string; data: unknown }>();
+  for (const sheet of sheets || []) {
+    if (!sheet.variant_id || sheetByVariant.has(sheet.variant_id)) continue;
+    sheetByVariant.set(sheet.variant_id, { id: sheet.id, data: sheet.data });
+  }
+  const familyById = new Map((products || []).map((p) => [p.id, p.name as string]));
+
+  const rows: SkuRebuildRow[] = [];
+  const writes: RebuildWrite[] = [];
+  const withoutSheet: string[] = [];
+  const scannedIds: string[] = [];
+  // Codes that will still be in use after the rebuild: one per variant, either
+  // the rebuilt code or the stored one for the variants left untouched. Two
+  // variants must not end up sharing a Long SKU.
+  const claimed = new Map<string, string>();
+  const pending: { row: SkuRebuildRow; write: RebuildWrite }[] = [];
+
+  for (const variant of variants || []) {
+    scannedIds.push(variant.id);
+    const sheet = sheetByVariant.get(variant.id);
+    const family = (variant.product_id ? familyById.get(variant.product_id) : '') || '';
+
+    if (!sheet) {
+      withoutSheet.push(variant.code || variant.name || variant.id);
+      claimed.set((variant.code || '').trim(), variant.id);
+      continue;
+    }
+
+    const data = syncIdentityFromSku(normalizeSpecSheet(sheet.data as Partial<SpecSheetData>));
+    const r = buildSku(data.sku);
+    const code = (data.code || r.longCode || r.shortCode).trim();
+    const stored: SkuIdentity = {
+      code: (variant.code || '').trim(),
+      name: (variant.name || '').trim(),
+      shortDescription: (variant.short_description || '').trim(),
+      longDescription: (variant.long_description || '').trim(),
+    };
+
+    // No code means an unfinished sheet (no Series). Rewriting it would erase a
+    // code the catalog is already using, so it is left as it is.
+    if (!code) {
+      withoutSheet.push(stored.code || variant.name || variant.id);
+      claimed.set(stored.code, variant.id);
+      continue;
+    }
+
+    const rebuilt: SkuIdentity = {
+      code,
+      name: (data.name || data.productName).trim() || code,
+      shortDescription: (data.codeDescription || r.shortDesc).trim(),
+      longDescription: (data.description || r.longDesc).trim(),
+    };
+
+    const row: SkuRebuildRow = {
+      variantId: variant.id,
+      family,
+      slug: variant.slug || '',
+      stored,
+      rebuilt,
+      blocked: null,
+    };
+
+    const same =
+      stored.code === rebuilt.code &&
+      stored.name === rebuilt.name &&
+      stored.shortDescription === rebuilt.shortDescription &&
+      stored.longDescription === rebuilt.longDescription;
+
+    if (same) {
+      claimed.set(stored.code, variant.id);
+      continue;
+    }
+
+    pending.push({
+      row,
+      write: {
+        variantId: variant.id,
+        sheetId: sheet.id,
+        data,
+        ...rebuilt,
+      },
+    });
+  }
+
+  // Second pass: a rebuilt code may only be written if nothing else will carry it.
+  for (const { row, write } of pending) {
+    const owner = claimed.get(row.rebuilt.code);
+    if (owner && owner !== row.variantId) {
+      // A duplicate made before the marker lived in the SKU rebuilds its source's
+      // code, so it can never be written — that is the row that sits in the list
+      // showing a name nobody can change. Re-mark it and it becomes its own
+      // variant again, keeping the "-COPY" code it is already known by.
+      const remarked = looksLikeCopy(row.stored.code)
+        ? markCopyForRebuild(write, claimed, row.variantId)
+        : null;
+      if (remarked) {
+        row.rebuilt = remarked;
+        claimed.set(remarked.code, row.variantId);
+        writes.push(write);
+      } else {
+        row.blocked = `“${row.rebuilt.code}” would be used by two variants. Change a Long-SKU segment (optic, CCT, finish…) on one of them first.`;
+      }
+    } else {
+      claimed.set(row.rebuilt.code, row.variantId);
+      writes.push(write);
+    }
+    rows.push(row);
+  }
+
+  return {
+    plan: { rows, scanned: (variants || []).length, withoutSheet },
+    writes,
+    scannedIds,
+  };
+}
+
+/**
+ * What a rebuild would change, without changing anything.
+ *
+ * Read first, apply second: a code is printed on labels and quoted to customers,
+ * so the list is meant to be looked at before it is written.
+ */
+export async function planSkuRebuild(): Promise<{ error: string } | SkuRebuildPlan> {
+  const role = await getCurrentUserRole();
+  if (role !== 'admin' && role !== 'editor') return { error: 'Unauthorized' };
+
+  const supabase = await createClient();
+  if (!supabase) return { error: 'Supabase not configured' };
+
+  const { plan } = await readSkuRebuild(supabase);
+  return plan;
+}
+
+/**
+ * Write the rebuilt identity onto every variant that needs it, and stamp the
+ * whole catalog with the rules build that produced it.
+ *
+ * Slugs are not touched — public URLs outlive a code change.
+ */
+async function runSkuRebuild(
+  supabase: NonNullable<Awaited<ReturnType<typeof createClient>>>
+): Promise<{ updated: number; skipped: number; failures: string[]; variantIds: string[] }> {
+  const { plan, writes, scannedIds } = await readSkuRebuild(supabase);
+  const failures: string[] = [];
+  const variantIds: string[] = [];
+  const failedIds = new Set<string>();
+
+  for (const write of writes) {
+    const { error } = await supabase
+      .from('product_variants')
+      .update({
+        code: write.code,
+        name: write.name,
+        short_description: write.shortDescription,
+        long_description: write.longDescription,
+        sku_rules_version: SKU_RULES_VERSION,
+      })
+      .eq('id', write.variantId);
+
+    if (error) {
+      failures.push(`${write.code}: ${error.message}`);
+      failedIds.add(write.variantId);
+      continue;
+    }
+
+    await supabase
+      .from('product_skus')
+      .update({ code: write.code, name: write.name })
+      .eq('variant_id', write.variantId);
+
+    // The sheet carries the same identity inside its JSON, and it is what the
+    // editor and the PDF read. Leaving it behind would make the next Save look
+    // like it changed something.
+    await supabase
+      .from('spec_sheets')
+      .update({ code: write.code, data: write.data })
+      .eq('id', write.sheetId);
+
+    variantIds.push(write.variantId);
+  }
+
+  // Everything that was read is now as current as these rules can make it —
+  // including the rows that already matched, the ones blocked by a duplicate code
+  // and the ones with no sheet to rebuild from. Stamping them all is what keeps
+  // the automatic pass from doing this again on the next page load; the manual
+  // Rebuild still recomputes every row from scratch and reports what it skipped.
+  // A row whose write failed keeps its old stamp, so the next pass retries it.
+  const stamped = scannedIds.filter((id) => !failedIds.has(id));
+  if (stamped.length > 0) {
+    await supabase
+      .from('product_variants')
+      .update({ sku_rules_version: SKU_RULES_VERSION })
+      .in('id', stamped);
+  }
+
+  revalidatePath('/admin/variants');
+  revalidatePath('/products', 'layout');
+  revalidatePath('/', 'layout');
+
+  return {
+    updated: variantIds.length,
+    skipped: plan.rows.filter((r) => r.blocked).length,
+    failures,
+    variantIds,
+  };
+}
+
+/** Rebuild on demand, from the admin's own hands. */
+export async function applySkuRebuild(): Promise<
+  | { error: string }
+  | { updated: number; skipped: number; failures: string[]; variantIds: string[] }
+> {
+  const role = await getCurrentUserRole();
+  if (role !== 'admin' && role !== 'editor') return { error: 'Unauthorized' };
+
+  const supabase = await createClient();
+  if (!supabase) return { error: 'Supabase not configured' };
+
+  return runSkuRebuild(supabase);
+}
+
+/**
+ * Bring the catalog up to the current naming rules, if it is behind.
+ *
+ * A variant row stores what the rules generated, so changing a rule leaves every
+ * row stale until someone opens the variant and saves it — which is how the list
+ * and the Product tab ended up disagreeing. Each row carries the rules build that
+ * wrote it, and the Variants page calls this on load: one pass per rules change,
+ * nothing to remember.
+ *
+ * Cheap when there is nothing to do — a single count, then it returns.
+ */
+export async function ensureSkuRebuild(): Promise<
+  | { error: string }
+  | { stale: number; updated: number; skipped: number; failures: string[]; variantIds: string[] }
+> {
+  const role = await getCurrentUserRole();
+  if (role !== 'admin' && role !== 'editor') return { error: 'Unauthorized' };
+
+  const supabase = await createClient();
+  if (!supabase) return { error: 'Supabase not configured' };
+
+  const { count, error } = await supabase
+    .from('product_variants')
+    .select('id', { count: 'exact', head: true })
+    .lt('sku_rules_version', SKU_RULES_VERSION);
+
+  if (error) return { error: error.message };
+  const stale = count ?? 0;
+  if (stale === 0) {
+    return { stale: 0, updated: 0, skipped: 0, failures: [], variantIds: [] };
+  }
+
+  const result = await runSkuRebuild(supabase);
+  return { stale, ...result };
 }
 
 export async function replaceVariantDatasheetPdf(

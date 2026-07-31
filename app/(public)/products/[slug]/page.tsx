@@ -50,6 +50,7 @@ export async function generateMetadata({ params }: PageProps) {
     .from('products')
     .select('name, description')
     .eq('slug', slug)
+    .eq('is_active', true)
     .single();
 
   if (product) {
@@ -73,6 +74,7 @@ export default async function ProductPage({ params, searchParams }: PageProps) {
     .from('products')
     .select('*, category:product_categories(*)')
     .eq('slug', slug)
+    .eq('is_active', true)
     .single();
 
   if (product) {
@@ -117,9 +119,10 @@ export default async function ProductPage({ params, searchParams }: PageProps) {
       const codeIsManual = sheetData?.link?.code === false;
       if (sku && !codeIsManual) {
         const r = buildSku(sku);
-        // Only expand to the long code when it actually extends the stored code
-        // (auto codes are a prefix of their long form); never shrink a manual one.
-        if (r.longCode && r.longCode.startsWith(r.shortCode) && r.longCode.length >= (v.code || '').length) {
+        // Only expand: a legacy row may still store the short code, and the long
+        // one carries every segment. Never shrink — the stored code may be longer
+        // than what an unfinished sheet can rebuild.
+        if (r.longCode && r.longCode.length >= (v.code || '').length) {
           full_code = r.longCode;
         }
       }
