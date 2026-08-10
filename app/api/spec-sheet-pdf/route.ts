@@ -129,8 +129,9 @@ export async function POST(request: Request) {
     skipDocumentCss,
   });
 
-  const browser = await launchPdfBrowser();
+  let browser: Awaited<ReturnType<typeof launchPdfBrowser>> | null = null;
   try {
+    browser = await launchPdfBrowser();
     const page = await browser.newPage();
     // Spec sheets need print media for their thead/tfoot spacers. Labels use
     // screen so globals.css cannot hide everything outside #spec-sheet-print.
@@ -176,8 +177,14 @@ export async function POST(request: Request) {
   } catch (err) {
     const message = err instanceof Error ? err.message : 'PDF generation failed';
     console.error('[spec-sheet-pdf]', message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: message,
+        stage: 'chromium',
+      },
+      { status: 500 }
+    );
   } finally {
-    await browser.close().catch(() => undefined);
+    if (browser) await browser.close().catch(() => undefined);
   }
 }

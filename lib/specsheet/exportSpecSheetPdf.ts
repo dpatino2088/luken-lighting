@@ -70,16 +70,17 @@ async function exportViaChromium(): Promise<Blob> {
 
   if (!res.ok) {
     let detail = `HTTP ${res.status}`;
+    const raw = await res.text();
     try {
-      const j = (await res.json()) as { error?: string };
+      const j = JSON.parse(raw) as { error?: string };
       if (j.error) detail = j.error;
     } catch {
-      /* ignore */
+      if (raw.trim()) detail = `${detail}: ${raw.trim().slice(0, 240)}`;
     }
     throw new Error(detail);
   }
 
-  return res.blob();
+  return new Blob([await res.arrayBuffer()], { type: 'application/pdf' });
 }
 
 /**
@@ -188,12 +189,18 @@ async function exportViaHtml2Canvas(rootId = 'spec-sheet-print'): Promise<Blob> 
 /**
  * Capture `#spec-sheet-print` into a US Letter PDF via Chromium print
  * (guaranteed match to Chrome Preview / Save as PDF).
- * No html2canvas fallback — that path diverges from Preview layout.
+ * Falls back to html2canvas if the serverless Chromium path fails, so a Save
+ * still produces a datasheet instead of only an HTTP 500 toast.
  */
 export async function exportSpecSheetPdfBlob(
-  _rootId = 'spec-sheet-print'
+  rootId = 'spec-sheet-print'
 ): Promise<Blob> {
-  return exportViaChromium();
+  try {
+    return await exportViaChromium();
+  } catch (err) {
+    console.warn('[spec-sheet] Chromium PDF failed; using raster fallback', err);
+    return exportViaHtml2Canvas(rootId);
+  }
 }
 
 /** Last-resort raster export (dev/debug only — layout may diverge from Preview). */

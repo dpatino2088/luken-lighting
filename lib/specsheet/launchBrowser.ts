@@ -24,11 +24,25 @@ function isServerlessRuntime(): boolean {
 export async function launchPdfBrowser(): Promise<Browser> {
   if (isServerlessRuntime()) {
     const chromium = (await import('@sparticuz/chromium')).default;
-    return puppeteer.launch({
-      args: await puppeteer.defaultArgs({ args: chromium.args, headless: 'shell' }),
-      defaultViewport: { width: 816, height: 1056, deviceScaleFactor: 1 },
-      executablePath: await chromium.executablePath(),
+    // WebGL/swiftshader extraction is slow and unnecessary for print→PDF.
+    chromium.setGraphicsMode = false;
+
+    const executablePath = await chromium.executablePath();
+    if (!executablePath) {
+      throw new Error('Chromium binary missing on serverless runtime.');
+    }
+
+    const args = await puppeteer.defaultArgs({
+      args: chromium.args,
       headless: 'shell',
+    });
+
+    return puppeteer.launch({
+      args,
+      defaultViewport: { width: 816, height: 1056, deviceScaleFactor: 1 },
+      executablePath,
+      headless: 'shell',
+      ignoreHTTPSErrors: true,
     });
   }
 
@@ -42,5 +56,6 @@ export async function launchPdfBrowser(): Promise<Browser> {
     headless: true,
     defaultViewport: { width: 816, height: 1056, deviceScaleFactor: 1 },
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--font-render-hinting=none'],
+    ignoreHTTPSErrors: true,
   });
 }
