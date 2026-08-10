@@ -186,11 +186,16 @@ export async function serializeSpecSheetForPdf(
 ): Promise<SerializedSpecSheet> {
   const source = document.getElementById(rootId);
   if (!source) {
-    throw new Error('Spec sheet preview not found. Open the Preview tab once, then try again.');
+    throw new Error(
+      rootId === 'label-print'
+        ? 'Label preview not found. Open the Label tab once, then try again.'
+        : 'Spec sheet preview not found. Open the Preview tab once, then try again.'
+    );
   }
 
   const revealed = revealHiddenAncestors(source);
   try {
+    await document.fonts.ready.catch(() => undefined);
     await waitForImages(source);
     await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
 

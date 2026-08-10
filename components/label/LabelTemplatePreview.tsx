@@ -79,7 +79,7 @@ export function LabelTemplatePreview({
     [level, logoUrl]
   );
 
-  const content = useMemo(() => contentOf(data), [data]);
+  const content = useMemo(() => contentOf(data, shape.visibility), [data, shape.visibility]);
   const layout = useMemo(() => layoutLabel(shape, content), [shape, content]);
   const measures = useMemo(() => measureItems(layout), [layout]);
 

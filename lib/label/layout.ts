@@ -90,6 +90,8 @@ export interface LabelContent {
   barcode: boolean;
   qr: boolean;
   logo: boolean;
+  /** Address / origin line on the fold panel. */
+  site: boolean;
   family: string;
   name: string;
   code: string;
@@ -155,9 +157,11 @@ const TYPE_BASE: Record<LineKey, number> = {
 /** Space each line takes, as a multiple of its own size. */
 const TYPE_LEADING: Record<LineKey, number> = {
   family: 1,
-  name: 1.9,
-  code: 1.7,
-  spec: 1.5,
+  // Extra air under the family (e.g. LEDA) so the configuration name does not
+  // sit against it — the previous 1.9 looked glued on the production art.
+  name: 2.6,
+  code: 1.9,
+  spec: 1.6,
 };
 
 /** Below this the type stops being readable in print, so it is dropped instead. */
@@ -908,8 +912,8 @@ function manualLayout(
   }
 
   // ── Site line ──────────────────────────────────────────────────────────────
-  let site = auto.site;
-  const sitePlace = placements.site;
+  let site = content.site ? auto.site : null;
+  const sitePlace = content.site ? placements.site : undefined;
   if (sitePlace) {
     const turn = drawn.site;
     // Two rows at a size the type step sets, so this one moves and turns but is not
@@ -1324,7 +1328,7 @@ export function layoutLabel(template: LabelShape, content: LabelContent): LabelL
   // Only the strip left over beside the barcode is free, and on a 30mm fold that
   // strip is a few millimetres wide — which is why this line ends up turned on the
   // production template even though the rest of that artwork reads across.
-  if (twoUp) {
+  if (twoUp && content.site) {
     const size = clamp(VERTICAL_TEXT_SIZE_MM * fitted.step, 1.4, VERTICAL_TEXT_SIZE_MM);
     // Both directions are measured against the strip that is left and placed inside
     // it, so the check and the position cannot drift apart — which is how a fraction
@@ -1393,32 +1397,44 @@ export function layoutLabel(template: LabelShape, content: LabelContent): LabelL
  * Shared by the renderer and by the warnings, so the two always talk about the
  * same label.
  */
-export function contentOf(data: {
-  gtin: string | null;
-  qrUrl: string | null;
-  family: string;
-  name: string;
-  code: string;
-  specLine: string;
-}): LabelContent {
+export function contentOf(
+  data: {
+    gtin: string | null;
+    qrUrl: string | null;
+    family: string;
+    name: string;
+    code: string;
+    specLine: string;
+  },
+  visibility?: Partial<Record<'barcode' | 'qr' | 'logo' | 'text' | 'site', boolean>>
+): LabelContent {
+  const show = {
+    barcode: visibility?.barcode !== false,
+    qr: visibility?.qr !== false,
+    logo: visibility?.logo !== false,
+    text: visibility?.text !== false,
+    site: visibility?.site !== false,
+  };
+
   return {
-    barcode: Boolean(data.gtin),
-    qr: Boolean(data.qrUrl),
-    // Always reserved, even before a logo is uploaded: the wordmark belongs on
-    // every label, and holding its place keeps the download identical to the
-    // preview instead of re-flowing once the file arrives.
-    logo: true,
+    barcode: show.barcode && Boolean(data.gtin),
+    qr: show.qr && Boolean(data.qrUrl),
+    // Always reserved when enabled, even before a logo is uploaded: the wordmark
+    // belongs on every label, and holding its place keeps the download identical
+    // to the preview instead of re-flowing once the file arrives.
+    logo: show.logo,
+    site: show.site,
     // Set in caps whatever case the record is kept in. The family and the
     // configuration name identify the goods on a carton, next to a SKU that is
     // already caps, and a stored "Pegasus" would print out of step with the SKU
     // beside it and with the same name everywhere else in the system. Done here so
     // the width the engine measures is the width of what is actually drawn.
-    family: data.family.toUpperCase(),
-    name: data.name.toUpperCase(),
+    family: show.text ? data.family.toUpperCase() : '',
+    name: show.text ? data.name.toUpperCase() : '',
     // The prefix is part of the string the engine measures and breaks, so it lives
     // here rather than in the renderer.
-    code: data.code ? `SKU: ${data.code}` : '',
-    spec: data.specLine,
+    code: show.text && data.code ? `SKU: ${data.code}` : '',
+    spec: show.text ? data.specLine : '',
   };
 }
 

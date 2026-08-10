@@ -5,7 +5,11 @@ import { revalidatePath } from 'next/cache';
 import { isValidUpcA } from '@/lib/label/gtin';
 import {
   LABEL_FIELDS,
+  LABEL_INK,
   LABEL_LEVELS,
+  LABEL_PAPER,
+  DEFAULT_LABEL_VISIBILITY,
+  normalizeLabelColor,
   readPlacements,
   validateLabelSize,
   validatePlacements,
@@ -15,6 +19,7 @@ import {
   type LabelOrientation,
   type LabelTemplate,
   type LabelTemplateInput,
+  type LabelVisibility,
 } from '@/lib/label/geometry';
 
 /** Column that carries each field's direction. */
@@ -26,13 +31,30 @@ const ROTATION_COLUMN: Record<LabelFieldKey, string> = {
   site: 'site_rotation',
 };
 
+const SHOW_COLUMN: Record<LabelFieldKey, string> = {
+  barcode: 'show_barcode',
+  qr: 'show_qr',
+  logo: 'show_logo',
+  text: 'show_text',
+  site: 'show_site',
+};
+
 // Spelled out rather than built from ROTATION_COLUMN: supabase-js reads the
 // literal to type the result, and a computed string leaves every row as unknown.
 const TEMPLATE_COLUMNS =
-  'id, name, level, brand, width_mm, height_mm, orientation, sections, fold_mm, is_default, barcode_rotation, qr_rotation, logo_rotation, text_rotation, site_rotation, placements';
+  'id, name, level, brand, width_mm, height_mm, orientation, sections, fold_mm, is_default, barcode_rotation, qr_rotation, logo_rotation, text_rotation, site_rotation, placements, background_color, ink_color, show_barcode, show_qr, show_logo, show_text, show_site';
 
 function rotationOf(value: unknown): LabelFieldRotation {
   return value === 'horizontal' || value === 'vertical' ? value : 'auto';
+}
+
+function visibilityOf(row: Record<string, unknown>): LabelVisibility {
+  const out = { ...DEFAULT_LABEL_VISIBILITY };
+  for (const { key } of LABEL_FIELDS) {
+    const col = SHOW_COLUMN[key];
+    if (typeof row[col] === 'boolean') out[key] = row[col] as boolean;
+  }
+  return out;
 }
 
 function mapTemplate(row: Record<string, unknown>): LabelTemplate {
@@ -52,6 +74,9 @@ function mapTemplate(row: Record<string, unknown>): LabelTemplate {
     fold_mm: row.fold_mm === null ? null : Number(row.fold_mm),
     rotation,
     placements: readPlacements(row.placements),
+    background_color: normalizeLabelColor(row.background_color, LABEL_INK),
+    ink_color: normalizeLabelColor(row.ink_color, LABEL_PAPER),
+    visibility: visibilityOf(row),
     is_default: Boolean(row.is_default),
   };
 }
@@ -62,6 +87,7 @@ function orientationOf(value: unknown): LabelOrientation {
 
 /** The shared shape of an insert and an update, so the two cannot drift. */
 function templateRow(input: LabelTemplateInput): Record<string, unknown> {
+  const visibility = input.visibility ?? DEFAULT_LABEL_VISIBILITY;
   const row: Record<string, unknown> = {
     name: input.name.trim(),
     level: input.level,
@@ -74,9 +100,12 @@ function templateRow(input: LabelTemplateInput): Record<string, unknown> {
     // Re-read rather than passed through: this is the copy that reaches the column,
     // so it is also where a stray value from the client stops being trusted.
     placements: readPlacements(input.placements),
+    background_color: normalizeLabelColor(input.background_color, LABEL_INK),
+    ink_color: normalizeLabelColor(input.ink_color, LABEL_PAPER),
   };
   for (const { key } of LABEL_FIELDS) {
     row[ROTATION_COLUMN[key]] = rotationOf(input.rotation?.[key]);
+    row[SHOW_COLUMN[key]] = Boolean(visibility[key] ?? true);
   }
   return row;
 }

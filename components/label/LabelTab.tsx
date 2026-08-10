@@ -98,7 +98,7 @@ export function LabelTab({
   // Same call the renderer makes, so the notice below lists exactly what the
   // preview and the download left out for this variant — not a generic estimate.
   const layout = useMemo(
-    () => (template ? layoutLabel(template, contentOf(data)) : null),
+    () => (template ? layoutLabel(template, contentOf(data, template.visibility)) : null),
     [template, data]
   );
 
@@ -131,13 +131,26 @@ export function LabelTab({
 
   /**
    * Both exports clone the live preview, so the placeholder guides have to leave
-   * the DOM first — a dashed "LOGO" box must never reach the factory.
+   * the DOM first — a dashed "LOGO" box must never reach the factory. Also wait
+   * briefly for barcode/QR (async bwip-js) so the PDF is not missing them.
    */
   async function withoutPlaceholders<T>(run: () => T | Promise<T>): Promise<T> {
     setExporting(true);
     await new Promise<void>((resolve) =>
       requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
     );
+    const needsSymbol =
+      Boolean(data.gtin && template?.visibility?.barcode !== false) ||
+      Boolean(data.qrUrl && template?.visibility?.qr !== false);
+    if (needsSymbol) {
+      const deadline = Date.now() + 1500;
+      while (Date.now() < deadline) {
+        const nested =
+          document.getElementById('label-print')?.querySelectorAll('svg svg')?.length ?? 0;
+        if (nested > 0) break;
+        await new Promise((r) => setTimeout(r, 50));
+      }
+    }
     try {
       return await run();
     } finally {
@@ -149,9 +162,17 @@ export function LabelTab({
     if (!template) return;
     setPdfBusy(true);
     try {
-      const blob = await withoutPlaceholders(() => exportLabelPdf(template));
+      const blob = await withoutPlaceholders(() =>
+        exportLabelPdf(template, {
+          description: variant.short_description || [family, name].filter(Boolean).join(' — '),
+          manufacturerSku: variant.manufacturer_sku,
+          code,
+          family,
+          name,
+        })
+      );
       downloadBlob(blob, labelFileName(code, 'pdf'));
-      toast.success(`PDF at ${template.width_mm} × ${template.height_mm} mm.`);
+      toast.success('PDF letter sheet ready (label + footer for manufacturer).');
     } catch (err) {
       toast.error(err instanceof Error ? err.message : 'PDF export failed.');
     } finally {
@@ -172,10 +193,10 @@ export function LabelTab({
   return (
     <div className="space-y-4">
       <p className="text-[11px] text-gray-500">
-        Artwork for the factory. The template sets the trim size and where the fold falls; every
-        element keeps a fixed physical size so the barcode stays within GS1 minimums and the type
-        matches the labels already in production. <strong>PDF</strong> is the print-ready file at
-        exact millimetres, <strong>SVG</strong> is the editable handoff to Illustrator for CMYK.
+        Artwork for the factory. The template sets the trim size and which fields print; element
+        sizes stay physical so barcodes meet GS1 floors when they fit. <strong>PDF</strong> is a US
+        Letter sheet with the label at the top and description / manufacturer SKU in the footer for
+        PRO matching. <strong>SVG</strong> is the editable Illustrator handoff.
       </p>
 
       <div className="bg-white border border-gray-200 p-5 space-y-4">

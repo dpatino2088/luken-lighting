@@ -14,9 +14,16 @@ type Body = {
   htmlClass?: string;
   bodyClass?: string;
   /** Millimetre page size for fixed-format output such as labels. */
-  pageSize?: { width_mm?: number; height_mm?: number };
+  pageSize?: { width_mm?: number; height_mm?: number } | null;
   rootId?: string;
   background?: string;
+  /**
+   * Chromium media. Spec sheets need `print` (their @media print rules).
+   * Labels use `screen` so globals.css cannot hide everything except #spec-sheet-print.
+   */
+  mediaType?: 'print' | 'screen';
+  /** When true, skip the generic page CSS that forces position:static on the root. */
+  skipDocumentCss?: boolean;
 };
 
 function escapeAttr(value: string): string {
@@ -25,7 +32,7 @@ function escapeAttr(value: string): string {
 
 /**
  * Rebuild the Preview's document: same <html>/<body> classes (Inter lives on a
- * class), same stylesheets, then PDF_DOCUMENT_CSS last so its page setup wins.
+ * class), same stylesheets, then optional PDF_DOCUMENT_CSS last so its page setup wins.
  */
 function buildDocument(body: {
   html: string;
@@ -37,26 +44,29 @@ function buildDocument(body: {
   pageSize: PdfPageSize | null;
   rootId: string;
   background: string | null;
+  skipDocumentCss: boolean;
 }): string {
   const links = body.styleHrefs
     .map((href) => `<link rel="stylesheet" href="${escapeAttr(href)}" />`)
     .join('\n');
+
+  const documentCss = body.skipDocumentCss
+    ? ''
+    : pdfDocumentCss({
+        pageSize: body.pageSize,
+        rootId: body.rootId,
+        background: body.background || undefined,
+      });
 
   return `<!DOCTYPE html>
 <html lang="en" class="${escapeAttr(body.htmlClass)}">
 <head>
 <meta charset="utf-8" />
 <base href="${escapeAttr(body.baseHref)}" />
-<title>Spec Sheet</title>
+<title>Label</title>
 ${links}
 ${body.css ? `<style>\n${body.css}\n</style>` : ''}
-<style>
-${pdfDocumentCss({
-  pageSize: body.pageSize,
-  rootId: body.rootId,
-  background: body.background || undefined,
-})}
-</style>
+${documentCss ? `<style>\n${documentCss}\n</style>` : ''}
 </head>
 <body class="${escapeAttr(body.bodyClass)}">
 ${body.html}
@@ -99,6 +109,8 @@ export async function POST(request: Request) {
   const rootId = typeof body.rootId === 'string' && /^[A-Za-z][\w-]*$/.test(body.rootId)
     ? body.rootId
     : 'spec-sheet-print';
+  const mediaType = body.mediaType === 'screen' ? 'screen' : 'print';
+  const skipDocumentCss = Boolean(body.skipDocumentCss);
 
   const documentHtml = buildDocument({
     html,
@@ -114,15 +126,15 @@ export async function POST(request: Request) {
     background: /^#[0-9A-Fa-f]{3,8}$/.test(String(body.background || ''))
       ? String(body.background)
       : null,
+    skipDocumentCss,
   });
 
   const browser = await launchPdfBrowser();
   try {
     const page = await browser.newPage();
-    // Print media so the sheet's own @media print rules apply — per-page top and
-    // bottom insets come from the repeating thead/tfoot spacers, exactly as in
-    // Chrome's "Save as PDF".
-    await page.emulateMediaType('print');
+    // Spec sheets need print media for their thead/tfoot spacers. Labels use
+    // screen so globals.css cannot hide everything outside #spec-sheet-print.
+    await page.emulateMediaType(mediaType);
     await page.setViewport({ width: 816, height: 1056, deviceScaleFactor: 1 });
     await page.setContent(documentHtml, {
       waitUntil: 'load',

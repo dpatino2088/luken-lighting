@@ -6,6 +6,7 @@ import {
   FONT_TEXT,
   LABEL_INK,
   LABEL_PAPER,
+  normalizeLabelColor,
   quarterFrame,
   type LabelShape,
 } from '@/lib/label/geometry';
@@ -79,7 +80,13 @@ export function LabelSvg({
 
   // Every position comes from here, including which pieces made it onto the
   // label at this size. The preview is the artwork, so the same call decides both.
-  const layout = useMemo(() => layoutLabel(template, contentOf(data)), [template, data]);
+  const layout = useMemo(
+    () => layoutLabel(template, contentOf(data, template.visibility)),
+    [template, data]
+  );
+
+  const background = normalizeLabelColor(template.background_color, LABEL_INK);
+  const ink = normalizeLabelColor(template.ink_color, LABEL_PAPER);
 
   // Every turned element is drawn upright inside its own frame and the frame is
   // rotated into place. Proportions survive that; stretching a wordmark into a tall
@@ -110,7 +117,7 @@ export function LabelSvg({
       // real millimetres rather than a pixel box that happens to look right.
       style={{ display: 'block' }}
     >
-      <rect x={0} y={0} width={layout.canvas.w} height={layout.canvas.h} fill={LABEL_INK} />
+      <rect x={0} y={0} width={layout.canvas.w} height={layout.canvas.h} fill={background} />
 
       {layout.fold !== null && (
         <>
@@ -121,7 +128,7 @@ export function LabelSvg({
             y1={0}
             x2={layout.fold}
             y2={layout.canvas.h * 0.28}
-            stroke={LABEL_PAPER}
+            stroke={ink}
             strokeWidth={0.2}
           />
           <line
@@ -129,7 +136,7 @@ export function LabelSvg({
             y1={layout.canvas.h * 0.72}
             x2={layout.fold}
             y2={layout.canvas.h}
-            stroke={LABEL_PAPER}
+            stroke={ink}
             strokeWidth={0.2}
           />
         </>
@@ -175,7 +182,7 @@ export function LabelSvg({
           y={layout.site.size}
           fontFamily={FONT_TEXT}
           fontSize={layout.site.size}
-          fill={LABEL_PAPER}
+          fill={ink}
         >
           <tspan fontWeight="700">{data.siteText}</tspan>
           <tspan x={0} dy={layout.site.size * 1.15} fontSize={layout.site.size * 0.85}>
@@ -196,7 +203,7 @@ export function LabelSvg({
           fontSize={line.size}
           minFontSize={Math.max(1.2, line.size * 0.5)}
           fontFamily={line.key === 'family' ? FONT_DISPLAY : FONT_TEXT}
-          fill={LABEL_PAPER}
+          fill={ink}
         >
           {line.text}
         </FittedText>
@@ -247,7 +254,7 @@ export function LabelSvg({
               height={logoDraw.h}
               viewBox={inlineLogo.viewBox}
               preserveAspectRatio="xMaxYMax meet"
-              fill={LABEL_PAPER}
+              fill={ink}
               dangerouslySetInnerHTML={{ __html: inlineLogo.inner }}
             />
           ) : data.logoUrl ? (
@@ -270,7 +277,7 @@ export function LabelSvg({
                   width={logoDraw.w}
                   height={logoDraw.h}
                   fill="none"
-                  stroke={LABEL_PAPER}
+                  stroke={ink}
                   strokeWidth={0.2}
                   strokeDasharray="1 1"
                   opacity={0.5}
@@ -280,7 +287,7 @@ export function LabelSvg({
                   y={logoDraw.y + logoDraw.h * 0.68}
                   fontFamily={FONT_TEXT}
                   fontSize={Math.min(2.6, logoDraw.h * 0.5)}
-                  fill={LABEL_PAPER}
+                  fill={ink}
                   textAnchor="middle"
                   opacity={0.5}
                 >

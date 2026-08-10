@@ -93,6 +93,17 @@ export interface LabelPlacement {
 
 export type LabelPlacements = Partial<Record<LabelFieldKey, LabelPlacement>>;
 
+/** Which fields print on this template. Off means omitted even when data exists. */
+export type LabelVisibility = Record<LabelFieldKey, boolean>;
+
+export const DEFAULT_LABEL_VISIBILITY: LabelVisibility = {
+  barcode: true,
+  qr: true,
+  logo: true,
+  text: true,
+  site: true,
+};
+
 export interface LabelTemplate {
   id: string;
   name: string;
@@ -112,6 +123,12 @@ export interface LabelTemplate {
   rotation: Record<LabelFieldKey, LabelFieldRotation>;
   /** Empty when the layout is left to the engine, which is the default. */
   placements: LabelPlacements;
+  /** Field fill. Defaults to the production dark brand colour. */
+  background_color: string;
+  /** Type and logo fill. Defaults to white. */
+  ink_color: string;
+  /** Per-field on/off. */
+  visibility: LabelVisibility;
   is_default: boolean;
 }
 
@@ -128,6 +145,9 @@ export type LabelShape = Pick<
 > & {
   /** Absent or empty means the engine decides, which is how every label starts. */
   placements?: LabelPlacements;
+  background_color?: string;
+  ink_color?: string;
+  visibility?: LabelVisibility;
 };
 
 export const DEFAULT_FIELD_ROTATION: Record<LabelFieldKey, LabelFieldRotation> = {
@@ -229,33 +249,24 @@ export function resolveTurns(
 export type LabelTemplateInput = Omit<LabelTemplate, 'id' | 'is_default'>;
 
 /**
- * The size frame every template has to sit in.
+ * Size frame for templates.
  *
- * These are not preferences, they are the range in which a label can still carry
- * everything it has to carry: barcode, QR, logo, family, name, Long SKU and the
- * electrical line. Each bound below was measured against the layout engine rather
- * than chosen by eye, and inside the frame every combination comes out complete —
- * which is the point. A size cannot be defined here that then loses information
- * at download time.
+ * Free millimetre sizes from a small die (15 × 15) up to large cartons. 1 mm steps
+ * so a factory can match an exact carton face. Very small labels will drop symbols
+ * that cannot fit — the layout reports that rather than blocking the size.
  *
- * Sizes move in centimetre steps so a set of cartons shares a small number of
- * label sizes instead of each one being bespoke.
- *
- * The canvas is always horizontal, so the long side is the width and the short
- * side the height, whichever way the fields inside are turned.
+ * The canvas is always horizontal: width is the long side, height the short.
  */
-export const LABEL_SIZE_STEP_MM = 10;
-/** Along the design. 60mm is where the QR still fits beside a 22mm type column. */
-export const LABEL_LENGTH_MIN_MM = 60;
-export const LABEL_LENGTH_MAX_MM = 130;
-/** Across the design. 40mm is what the turned barcode needs with its quiet zones. */
-export const LABEL_HEIGHT_MIN_MM = 40;
-export const LABEL_HEIGHT_MAX_MM = 50;
-/** A narrower fold panel forces the bars to be truncated to fit. */
-export const LABEL_FOLD_MIN_MM = 30;
-/** What has to remain past the fold for the main panel to hold its contents. */
-export const LABEL_CONTENT_MIN_MM = 50;
-/** Shortest label that can be folded at all: fold panel plus main panel. */
+export const LABEL_SIZE_STEP_MM = 1;
+export const LABEL_LENGTH_MIN_MM = 15;
+export const LABEL_LENGTH_MAX_MM = 500;
+export const LABEL_HEIGHT_MIN_MM = 15;
+export const LABEL_HEIGHT_MAX_MM = 500;
+/** Narrowest fold panel that still holds a truncated barcode. */
+export const LABEL_FOLD_MIN_MM = 10;
+/** What has to remain past the fold for the main panel. */
+export const LABEL_CONTENT_MIN_MM = 15;
+/** Shortest label that can be folded at all. */
 export const LABEL_FOLD_LENGTH_MIN_MM = LABEL_FOLD_MIN_MM + LABEL_CONTENT_MIN_MM;
 
 function stepRange(min: number, max: number): number[] {
@@ -264,28 +275,32 @@ function stepRange(min: number, max: number): number[] {
   return out;
 }
 
+/** Common presets for the size dropdowns; free values are typed beside them. */
 export function labelLengthOptions(): number[] {
-  return stepRange(LABEL_LENGTH_MIN_MM, LABEL_LENGTH_MAX_MM);
+  const presets = [15, 25, 30, 40, 50, 60, 70, 80, 90, 100, 110, 120, 121, 130, 150, 180, 200, 250, 300, 400, 500];
+  return presets.filter((v) => v >= LABEL_LENGTH_MIN_MM && v <= LABEL_LENGTH_MAX_MM);
 }
 
 export function labelHeightOptions(): number[] {
-  return stepRange(LABEL_HEIGHT_MIN_MM, LABEL_HEIGHT_MAX_MM);
+  const presets = [15, 20, 25, 30, 35, 40, 45, 50, 60, 70, 80, 100, 120, 150, 200, 300, 500];
+  return presets.filter((v) => v >= LABEL_HEIGHT_MIN_MM && v <= LABEL_HEIGHT_MAX_MM);
 }
 
 /**
  * Folds that leave the main panel enough room at a given artwork length.
- * Empty below {@link LABEL_FOLD_LENGTH_MIN_MM}: such a label cannot be folded at
- * all, and offering a position anyway would produce a size the frame rejects.
+ * Empty below {@link LABEL_FOLD_LENGTH_MIN_MM}: such a label cannot be folded.
  */
 export function labelFoldOptions(length: number): number[] {
   if (length < LABEL_FOLD_LENGTH_MIN_MM) return [];
   return stepRange(LABEL_FOLD_MIN_MM, length - LABEL_CONTENT_MIN_MM);
 }
 
+function roundToStep(value: number, step: number): number {
+  return Math.round(value / step) * step;
+}
+
 /**
  * Checks a template against the frame. Returns null when it is inside it.
- * Runs on the client for immediate feedback and again on the server, which is the
- * copy that counts.
  */
 export function validateLabelSize(
   template: Pick<LabelTemplate, 'width_mm' | 'height_mm' | 'sections' | 'fold_mm'>
@@ -297,14 +312,14 @@ export function validateLabelSize(
   if (!Number.isFinite(length) || !Number.isFinite(height)) {
     return 'Width and height must be numbers, in millimetres.';
   }
-  if (length % step !== 0 || height % step !== 0) {
-    return `Label sizes go in ${step}mm steps, so 60 × 40 or 130 × 50 but nothing in between.`;
+  if (Math.abs(length - roundToStep(length, step)) > 0.001 || Math.abs(height - roundToStep(height, step)) > 0.001) {
+    return `Label sizes go in ${step}mm steps.`;
   }
   if (length < LABEL_LENGTH_MIN_MM || length > LABEL_LENGTH_MAX_MM) {
-    return `The length has to be between ${LABEL_LENGTH_MIN_MM} and ${LABEL_LENGTH_MAX_MM}mm. Below ${LABEL_LENGTH_MIN_MM}mm the QR no longer fits beside the type; above ${LABEL_LENGTH_MAX_MM}mm is past the largest die in production.`;
+    return `Width must be between ${LABEL_LENGTH_MIN_MM} and ${LABEL_LENGTH_MAX_MM} mm.`;
   }
   if (height < LABEL_HEIGHT_MIN_MM || height > LABEL_HEIGHT_MAX_MM) {
-    return `The height has to be between ${LABEL_HEIGHT_MIN_MM} and ${LABEL_HEIGHT_MAX_MM}mm. A UPC-A turned on its side needs ${LABEL_HEIGHT_MIN_MM}mm including its quiet zones.`;
+    return `Height must be between ${LABEL_HEIGHT_MIN_MM} and ${LABEL_HEIGHT_MAX_MM} mm.`;
   }
 
   if (template.sections === 2) {
@@ -312,23 +327,47 @@ export function validateLabelSize(
     if (fold === null || !Number.isFinite(fold)) {
       return 'A two-section label needs a fold position.';
     }
-    if (fold % step !== 0) {
+    if (Math.abs(fold - roundToStep(fold, step)) > 0.001) {
       return `The fold goes in ${step}mm steps too.`;
     }
     if (fold < LABEL_FOLD_MIN_MM) {
-      return `The fold panel has to be at least ${LABEL_FOLD_MIN_MM}mm wide, otherwise the barcode has to be printed with shortened bars to fit it.`;
+      return `The fold panel has to be at least ${LABEL_FOLD_MIN_MM} mm wide.`;
     }
     if (length < LABEL_FOLD_LENGTH_MIN_MM) {
-      return `A ${length}mm label is too short to fold: it takes ${LABEL_FOLD_MIN_MM}mm for the barcode panel plus ${LABEL_CONTENT_MIN_MM}mm for the main panel, so ${LABEL_FOLD_LENGTH_MIN_MM}mm at least. Use a single panel at this length.`;
+      return `A ${length}mm label is too short to fold (needs at least ${LABEL_FOLD_LENGTH_MIN_MM} mm). Use a single panel.`;
     }
     if (length - fold < LABEL_CONTENT_MIN_MM) {
-      return `A ${fold}mm fold leaves ${length - fold}mm for the main panel, and it needs ${LABEL_CONTENT_MIN_MM}mm. Either move the fold to ${length - LABEL_CONTENT_MIN_MM}mm or make the label ${fold + LABEL_CONTENT_MIN_MM}mm long.`;
+      return `A ${fold}mm fold leaves ${length - fold}mm for the main panel; it needs ${LABEL_CONTENT_MIN_MM} mm.`;
     }
   } else if (template.fold_mm !== null) {
     return 'A single-panel label has no fold.';
   }
 
   return null;
+}
+
+/** Accepts `#RGB` / `#RRGGBB` and normalises to `#RRGGBB`. */
+export function normalizeLabelColor(value: unknown, fallback: string): string {
+  if (typeof value !== 'string') return fallback;
+  const raw = value.trim();
+  if (/^#[0-9A-Fa-f]{6}$/.test(raw)) return raw.toUpperCase();
+  if (/^#[0-9A-Fa-f]{3}$/.test(raw)) {
+    const r = raw[1];
+    const g = raw[2];
+    const b = raw[3];
+    return `#${r}${r}${g}${g}${b}${b}`.toUpperCase();
+  }
+  return fallback;
+}
+
+export function readVisibility(value: unknown): LabelVisibility {
+  const source =
+    value && typeof value === 'object' ? (value as Record<string, unknown>) : {};
+  const out = { ...DEFAULT_LABEL_VISIBILITY };
+  for (const { key } of LABEL_FIELDS) {
+    if (typeof source[key] === 'boolean') out[key] = source[key];
+  }
+  return out;
 }
 
 /**

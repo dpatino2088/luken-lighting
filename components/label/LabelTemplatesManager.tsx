@@ -8,15 +8,20 @@ import { toast } from '@/components/ui/Toast';
 import { confirmDialog } from '@/components/ui/ConfirmDialog';
 import {
   DEFAULT_FIELD_ROTATION,
+  DEFAULT_LABEL_VISIBILITY,
   LABEL_CONTENT_MIN_MM,
   LABEL_FIELDS,
   LABEL_FIELD_ROTATIONS,
   LABEL_FOLD_LENGTH_MIN_MM,
   LABEL_FOLD_MIN_MM,
   LABEL_HEIGHT_MAX_MM,
+  LABEL_HEIGHT_MIN_MM,
+  LABEL_INK,
   LABEL_LENGTH_MAX_MM,
+  LABEL_LENGTH_MIN_MM,
   LABEL_LEVELS,
   LABEL_ORIENTATIONS,
+  LABEL_PAPER,
   labelFoldOptions,
   labelHeightOptions,
   labelLengthOptions,
@@ -29,6 +34,7 @@ import {
   type LabelShape,
   type LabelTemplate,
   type LabelTemplateInput,
+  type LabelVisibility,
 } from '@/lib/label/geometry';
 import { layoutLabel, SAMPLE_CONTENT } from '@/lib/label/layout';
 import { LabelTemplatePreview } from '@/components/label/LabelTemplatePreview';
@@ -54,10 +60,6 @@ function overriddenFields(t: LabelTemplate): string[] {
   return LABEL_FIELDS.filter(({ key }) => (t.rotation?.[key] ?? 'auto') !== 'auto').map(
     ({ key, label }) => `${label.toLowerCase()} ${t.rotation[key]}`
   );
-}
-
-function mmOptions(values: number[]) {
-  return values.map((v) => ({ value: String(v), label: `${v} mm` }));
 }
 
 /**
@@ -159,8 +161,8 @@ export function LabelTemplatesManager({ labelLogoUrl }: { labelLogoUrl: string |
       ) : templates.length === 0 ? (
         <p className="text-sm text-gray-500 border border-gray-200 bg-gray-50 p-3">
           No templates yet. Add the first one below — the size measured from the artwork already in
-          production is {LABEL_LENGTH_MAX_MM} × {LABEL_HEIGHT_MAX_MM} mm with the fold{' '}
-          {LABEL_FOLD_MIN_MM} mm from the left.
+          production is 130 × 50 mm with the fold {LABEL_FOLD_MIN_MM} mm from the left. Sizes can go
+          down to {LABEL_LENGTH_MIN_MM} × {LABEL_HEIGHT_MIN_MM} mm.
         </p>
       ) : (
         <div className="divide-y divide-gray-100 border border-gray-200">
@@ -184,6 +186,8 @@ export function LabelTemplatesManager({ labelLogoUrl }: { labelLogoUrl: string |
                     orientation={t.orientation}
                     sections={t.sections}
                     fold_mm={t.fold_mm}
+                    background={t.background_color}
+                    ink={t.ink_color}
                     maxPx={92}
                   />
                 </div>
@@ -305,6 +309,8 @@ function TemplateOutline({
   orientation,
   sections,
   fold_mm,
+  background = LABEL_INK,
+  ink = LABEL_PAPER,
   maxPx,
 }: {
   width_mm: number;
@@ -312,6 +318,8 @@ function TemplateOutline({
   orientation: LabelOrientation;
   sections: 1 | 2;
   fold_mm: number | null;
+  background?: string;
+  ink?: string;
   maxPx: number;
 }) {
   if (!(width_mm > 0) || !(height_mm > 0)) {
@@ -331,14 +339,14 @@ function TemplateOutline({
       viewBox={`0 0 ${width_mm} ${height_mm}`}
       aria-hidden="true"
     >
-      <rect x={0} y={0} width={width_mm} height={height_mm} fill="#231F20" />
+      <rect x={0} y={0} width={width_mm} height={height_mm} fill={background} />
       {showFold && (
         <line
           x1={fold_mm as number}
           y1={0}
           x2={fold_mm as number}
           y2={height_mm}
-          stroke="#FFFFFF"
+          stroke={ink}
           strokeWidth={Math.max(0.4, width_mm / 200)}
           strokeDasharray={`${dash} ${dash}`}
         />
@@ -347,7 +355,7 @@ function TemplateOutline({
         x={anchorX}
         y={anchorY}
         transform={orientation === 'portrait' ? `rotate(-90 ${anchorX} ${anchorY})` : undefined}
-        fill="#FFFFFF"
+        fill={ink}
         opacity={0.6}
         fontSize={type}
         fontFamily="sans-serif"
@@ -378,17 +386,30 @@ function TemplateFields({
     initial?.orientation ?? 'landscape'
   );
   // The canvas, as drawn and as exported: the long side across, always.
-  const [length, setLength] = useState(initial?.width_mm ?? LABEL_LENGTH_MAX_MM);
-  const [height, setHeight] = useState(initial?.height_mm ?? LABEL_HEIGHT_MAX_MM);
+  // Held as text while typing so values like "121" can be entered freely —
+  // clamping on every keystroke blocked intermediate digits (e.g. typing "1"
+  // jumped back to the 15mm floor).
+  const [lengthText, setLengthText] = useState(String(initial?.width_mm ?? 130));
+  const [heightText, setHeightText] = useState(String(initial?.height_mm ?? 50));
+  const [foldText, setFoldText] = useState(String(initial?.fold_mm ?? 30));
+  const length = Number(lengthText);
+  const height = Number(heightText);
+  const fold = Number(foldText);
   const [sections, setSections] = useState<'1' | '2'>(initial?.sections === 1 ? '1' : '2');
-  const [fold, setFold] = useState(initial?.fold_mm ?? LABEL_FOLD_MIN_MM);
   const [rotation, setRotation] = useState<Record<LabelFieldKey, LabelFieldRotation>>(
     initial?.rotation ?? DEFAULT_FIELD_ROTATION
   );
+  const [visibility, setVisibility] = useState<LabelVisibility>(
+    initial?.visibility ?? DEFAULT_LABEL_VISIBILITY
+  );
+  const [backgroundColor, setBackgroundColor] = useState(
+    initial?.background_color ?? LABEL_INK
+  );
+  const [inkColor, setInkColor] = useState(initial?.ink_color ?? LABEL_PAPER);
   const [placements, setPlacements] = useState<LabelPlacements>(initial?.placements ?? {});
   const [busy, setBusy] = useState(false);
 
-  const foldOptions = labelFoldOptions(length);
+  const foldOptions = Number.isFinite(length) ? labelFoldOptions(length) : [];
   const canFold = foldOptions.length > 0;
   const twoUp = sections === '2' && canFold;
 
@@ -401,7 +422,9 @@ function TemplateFields({
       setSections('1');
       return;
     }
-    if (!foldOptions.includes(fold)) setFold(foldOptions[foldOptions.length - 1]);
+    if (Number.isFinite(fold) && !foldOptions.includes(fold)) {
+      setFoldText(String(foldOptions[foldOptions.length - 1]));
+    }
   }, [canFold, fold, foldOptions]);
 
   // Kept apart from the name and the level, and memoised, because this is what the
@@ -412,6 +435,9 @@ function TemplateFields({
   // save. Pulling everything back inside the new canvas keeps the arrangement as
   // close to where it was put as the size allows.
   useEffect(() => {
+    if (!Number.isFinite(length) || !Number.isFinite(height) || length <= 0 || height <= 0) {
+      return;
+    }
     setPlacements((current) => {
       const keys = Object.keys(current) as LabelFieldKey[];
       if (keys.length === 0) return current;
@@ -440,23 +466,34 @@ function TemplateFields({
 
   const shape = useMemo<LabelShape>(
     () => ({
-      width_mm: length,
-      height_mm: height,
+      width_mm: Number.isFinite(length) ? length : 0,
+      height_mm: Number.isFinite(height) ? height : 0,
       orientation,
       sections: twoUp ? 2 : 1,
-      fold_mm: twoUp ? fold : null,
+      fold_mm: twoUp && Number.isFinite(fold) ? fold : null,
       rotation,
       placements,
+      background_color: backgroundColor,
+      ink_color: inkColor,
+      visibility,
     }),
-    [length, height, orientation, twoUp, fold, rotation, placements]
+    [length, height, orientation, twoUp, fold, rotation, placements, backgroundColor, inkColor, visibility]
   );
 
   const draft: LabelTemplateInput = {
     name,
     level,
     brand: initial?.brand || 'Luken',
-    ...shape,
+    width_mm: Number.isFinite(length) ? length : 0,
+    height_mm: Number.isFinite(height) ? height : 0,
+    orientation,
+    sections: twoUp ? 2 : 1,
+    fold_mm: twoUp && Number.isFinite(fold) ? fold : null,
+    rotation,
     placements,
+    background_color: backgroundColor,
+    ink_color: inkColor,
+    visibility,
   };
 
   const sizeError = validateLabelSize(draft);
@@ -466,7 +503,17 @@ function TemplateFields({
   // whether a direction the fields were pinned to survived the space available.
   const summary = useMemo(() => {
     if (sizeError) return null;
-    const l = layoutLabel(shape, { ...SAMPLE_CONTENT, barcode: level !== 'product' });
+    const l = layoutLabel(shape, {
+      ...SAMPLE_CONTENT,
+      barcode: level !== 'product' && visibility.barcode,
+      qr: visibility.qr && SAMPLE_CONTENT.qr,
+      logo: visibility.logo,
+      site: visibility.site,
+      family: visibility.text ? SAMPLE_CONTENT.family : '',
+      name: visibility.text ? SAMPLE_CONTENT.name : '',
+      code: visibility.text ? SAMPLE_CONTENT.code : '',
+      spec: visibility.text ? SAMPLE_CONTENT.spec : '',
+    });
     return {
       lines: new Set(l.lines.map((x) => x.key)).size,
       step: l.step,
@@ -476,7 +523,7 @@ function TemplateFields({
       dropped: l.dropped,
       notes: l.notes,
     };
-  }, [sizeError, level, shape]);
+  }, [sizeError, level, shape, visibility]);
 
   async function handleSubmit() {
     setBusy(true);
@@ -484,6 +531,16 @@ function TemplateFields({
     // a rejected size keeps the typed values on screen to be corrected.
     await onSubmit(draft);
     setBusy(false);
+  }
+
+  /** Digits only while typing; empty is allowed so the field can be rewritten. */
+  function onMmChange(raw: string, setText: (v: string) => void) {
+    if (raw === '') {
+      setText('');
+      return;
+    }
+    if (!/^\d+(\.\d*)?$/.test(raw)) return;
+    setText(raw);
   }
 
   return (
@@ -508,22 +565,38 @@ function TemplateFields({
           />
         </div>
         <div>
-          <label className={labelCls}>Width</label>
-          <AdminSelect
-            aria-label="Label width"
-            value={String(length)}
-            onChange={(v) => setLength(Number(v))}
-            options={mmOptions(labelLengthOptions())}
+          <label className={labelCls}>Width (mm)</label>
+          <input
+            className={fieldCls}
+            type="text"
+            inputMode="decimal"
+            value={lengthText}
+            onChange={(e) => onMmChange(e.target.value, setLengthText)}
+            placeholder={`${LABEL_LENGTH_MIN_MM}–${LABEL_LENGTH_MAX_MM}`}
+            list="label-width-presets"
           />
+          <datalist id="label-width-presets">
+            {labelLengthOptions().map((v) => (
+              <option key={v} value={v} />
+            ))}
+          </datalist>
         </div>
         <div>
-          <label className={labelCls}>Height</label>
-          <AdminSelect
-            aria-label="Label height"
-            value={String(height)}
-            onChange={(v) => setHeight(Number(v))}
-            options={mmOptions(labelHeightOptions())}
+          <label className={labelCls}>Height (mm)</label>
+          <input
+            className={fieldCls}
+            type="text"
+            inputMode="decimal"
+            value={heightText}
+            onChange={(e) => onMmChange(e.target.value, setHeightText)}
+            placeholder={`${LABEL_HEIGHT_MIN_MM}–${LABEL_HEIGHT_MAX_MM}`}
+            list="label-height-presets"
           />
+          <datalist id="label-height-presets">
+            {labelHeightOptions().map((v) => (
+              <option key={v} value={v} />
+            ))}
+          </datalist>
         </div>
         <div>
           <label className={labelCls}>Sections</label>
@@ -558,15 +631,78 @@ function TemplateFields({
         </div>
         {twoUp && (
           <div>
-            <label className={labelCls}>Fold at</label>
-            <AdminSelect
-              aria-label="Fold position"
-              value={String(fold)}
-              onChange={(v) => setFold(Number(v))}
-              options={mmOptions(foldOptions)}
+            <label className={labelCls}>Fold at (mm)</label>
+            <input
+              className={fieldCls}
+              type="text"
+              inputMode="decimal"
+              value={foldText}
+              onChange={(e) => onMmChange(e.target.value, setFoldText)}
+              placeholder={`${LABEL_FOLD_MIN_MM}+`}
             />
           </div>
         )}
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <div>
+          <label className={labelCls}>Background</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="color"
+              aria-label="Background colour"
+              value={backgroundColor}
+              onChange={(e) => setBackgroundColor(e.target.value.toUpperCase())}
+              className="h-9 w-12 cursor-pointer border border-gray-300 bg-white p-0.5"
+            />
+            <input
+              className={fieldCls}
+              value={backgroundColor}
+              onChange={(e) => setBackgroundColor(e.target.value.toUpperCase())}
+              spellCheck={false}
+            />
+          </div>
+        </div>
+        <div>
+          <label className={labelCls}>Text / logo</label>
+          <div className="flex items-center gap-2">
+            <input
+              type="color"
+              aria-label="Ink colour"
+              value={inkColor}
+              onChange={(e) => setInkColor(e.target.value.toUpperCase())}
+              className="h-9 w-12 cursor-pointer border border-gray-300 bg-white p-0.5"
+            />
+            <input
+              className={fieldCls}
+              value={inkColor}
+              onChange={(e) => setInkColor(e.target.value.toUpperCase())}
+              spellCheck={false}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="border border-gray-200 bg-white p-3">
+        <p className="text-xs font-medium text-gray-700">Content on this label</p>
+        <p className="mt-0.5 text-[11px] text-gray-500">
+          Turn off anything this die should not print. Barcode and QR stay dark-on-white for scanning.
+        </p>
+        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2">
+          {LABEL_FIELDS.map((field) => (
+            <label key={field.key} className="inline-flex items-center gap-2 text-sm text-gray-800">
+              <input
+                type="checkbox"
+                checked={visibility[field.key]}
+                onChange={(e) =>
+                  setVisibility((prev) => ({ ...prev, [field.key]: e.target.checked }))
+                }
+                className="h-4 w-4 rounded-none border-gray-300 text-gray-900 focus:ring-gray-900"
+              />
+              {field.label}
+            </label>
+          ))}
+        </div>
       </div>
 
       {/* Per-field direction. Most labels never need this, so it stays compact and
@@ -617,7 +753,7 @@ function TemplateFields({
               </p>
               <p className="mt-1 text-[11px] text-gray-500">
                 Family name at {summary.family.toFixed(1)} mm — {Math.round(summary.step * 100)}% of
-                the size used on the {LABEL_LENGTH_MAX_MM} × {LABEL_HEIGHT_MAX_MM} artwork.
+                the size used on the 130 × 50 artwork.
               </p>
               {summary.dropped.map((d) => (
                 <p key={d.key} className="mt-1 text-[11px] text-red-700">
