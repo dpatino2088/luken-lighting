@@ -1104,89 +1104,97 @@ export async function replaceVariantDatasheetPdf(
   code: string,
   formData: FormData
 ) {
-  const role = await getCurrentUserRole();
-  if (role !== 'admin' && role !== 'editor') {
-    return { error: 'Unauthorized' };
-  }
-
-  const file = formData.get('file');
-  if (!file || typeof file === 'string') {
-    return { error: 'Missing PDF file' };
-  }
-  const blob = file as Blob;
-  if (typeof blob.arrayBuffer !== 'function' || blob.size < 100) {
-    return { error: 'Generated PDF was empty' };
-  }
-
-  // Prefer service role so storage replace is never blocked by session quirks.
-  const admin = createAdminClient();
-  const supabase = admin || (await createClient());
-  if (!supabase) return { error: 'Supabase not configured' };
-
-  const stamp = Date.now();
-  const safeCode = (code || 'spec-sheet').replace(/[^A-Za-z0-9._-]+/g, '-');
-  // Stable object name: overwriting it keeps every previously shared link alive
-  // while still serving the newest PDF. The ?v= param below busts the CDN cache.
-  const fileName = 'datasheet.pdf';
-  const filePath = `${variantId}/${fileName}`;
-  const bytes = Buffer.from(await blob.arrayBuffer());
-
-  const { error: uploadError } = await supabase.storage.from('documents').upload(filePath, bytes, {
-    upsert: true,
-    contentType: 'application/pdf',
-    cacheControl: '0',
-  });
-  if (uploadError) return { error: `Storage upload failed: ${uploadError.message}` };
-
-  // Drop legacy timestamped datasheets left by earlier versions of this action.
-  const { data: listed } = await supabase.storage.from('documents').list(variantId, { limit: 100 });
-  const stalePaths = (listed || [])
-    .filter((obj) => obj.name.startsWith('datasheet') && obj.name !== fileName)
-    .map((obj) => `${variantId}/${obj.name}`);
-  if (stalePaths.length > 0) {
-    await supabase.storage.from('documents').remove(stalePaths);
-  }
-
-  // Replace singleton DB slot.
-  const { data: previous } = await supabase
-    .from('product_assets')
-    .select('id, file_url')
-    .eq('variant_id', variantId)
-    .eq('type', 'datasheet');
-  // Manually uploaded datasheets can live under any name — clean those too.
-  for (const prev of previous || []) {
-    const prevPath = prev.file_url ? storagePathFromPublicUrl(prev.file_url, 'documents') : null;
-    if (prevPath && prevPath !== filePath) {
-      await supabase.storage.from('documents').remove([prevPath]);
+  try {
+    const role = await getCurrentUserRole();
+    if (role !== 'admin' && role !== 'editor') {
+      return { error: 'Unauthorized' };
     }
-  }
-  if (previous?.length) {
-    const { error: delErr } = await supabase
+
+    const file = formData.get('file');
+    if (!file || typeof file === 'string') {
+      return { error: 'Missing PDF file' };
+    }
+    const blob = file as Blob;
+    if (typeof blob.arrayBuffer !== 'function' || blob.size < 100) {
+      return { error: 'Generated PDF was empty' };
+    }
+
+    // Prefer service role so storage replace is never blocked by session quirks.
+    const admin = createAdminClient();
+    const supabase = admin || (await createClient());
+    if (!supabase) return { error: 'Supabase not configured' };
+
+    const stamp = Date.now();
+    const safeCode = (code || 'spec-sheet').replace(/[^A-Za-z0-9._-]+/g, '-');
+    // Stable object name: overwriting it keeps every previously shared link alive
+    // while still serving the newest PDF. The ?v= param below busts the CDN cache.
+    const fileName = 'datasheet.pdf';
+    const filePath = `${variantId}/${fileName}`;
+    const bytes = Buffer.from(await blob.arrayBuffer());
+
+    const { error: uploadError } = await supabase.storage.from('documents').upload(filePath, bytes, {
+      upsert: true,
+      contentType: 'application/pdf',
+      cacheControl: '0',
+    });
+    if (uploadError) return { error: `Storage upload failed: ${uploadError.message}` };
+
+    // Drop legacy timestamped datasheets left by earlier versions of this action.
+    const { data: listed } = await supabase.storage.from('documents').list(variantId, { limit: 100 });
+    const stalePaths = (listed || [])
+      .filter((obj) => obj.name.startsWith('datasheet') && obj.name !== fileName)
+      .map((obj) => `${variantId}/${obj.name}`);
+    if (stalePaths.length > 0) {
+      await supabase.storage.from('documents').remove(stalePaths);
+    }
+
+    // Replace singleton DB slot.
+    const { data: previous } = await supabase
       .from('product_assets')
-      .delete()
+      .select('id, file_url')
       .eq('variant_id', variantId)
       .eq('type', 'datasheet');
-    if (delErr) return { error: `Could not clear previous datasheet: ${delErr.message}` };
+    // Manually uploaded datasheets can live under any name — clean those too.
+    for (const prev of previous || []) {
+      const prevPath = prev.file_url ? storagePathFromPublicUrl(prev.file_url, 'documents') : null;
+      if (prevPath && prevPath !== filePath) {
+        await supabase.storage.from('documents').remove([prevPath]);
+      }
+    }
+    if (previous?.length) {
+      const { error: delErr } = await supabase
+        .from('product_assets')
+        .delete()
+        .eq('variant_id', variantId)
+        .eq('type', 'datasheet');
+      if (delErr) return { error: `Could not clear previous datasheet: ${delErr.message}` };
+    }
+
+    const { data: urlData } = supabase.storage.from('documents').getPublicUrl(filePath);
+    const publicUrl = `${urlData.publicUrl}?v=${stamp}`;
+    const title = `Spec Sheet / Datasheet (PDF) - ${safeCode}-spec-sheet.pdf`;
+
+    const { data: asset, error: insertErr } = await supabase
+      .from('product_assets')
+      .insert({
+        variant_id: variantId,
+        type: 'datasheet',
+        title,
+        file_url: publicUrl,
+        file_extension: 'pdf',
+      })
+      .select(
+        'id, variant_id, type, title, language, file_url, file_extension, sort_order, created_at, updated_at'
+      )
+      .single();
+
+    if (insertErr) return { error: `Could not save datasheet asset: ${insertErr.message}` };
+
+    await revalidateVariantPublicPages(supabase, variantId);
+    return { success: true, url: publicUrl, asset };
+  } catch (err) {
+    return {
+      error: err instanceof Error ? err.message : 'Datasheet PDF replace failed',
+    };
   }
-
-  const { data: urlData } = supabase.storage.from('documents').getPublicUrl(filePath);
-  const publicUrl = `${urlData.publicUrl}?v=${stamp}`;
-  const title = `Spec Sheet / Datasheet (PDF) - ${safeCode}-spec-sheet.pdf`;
-
-  const { data: asset, error: insertErr } = await supabase
-    .from('product_assets')
-    .insert({
-      variant_id: variantId,
-      type: 'datasheet',
-      title,
-      file_url: publicUrl,
-      file_extension: 'pdf',
-    })
-    .select()
-    .single();
-
-  if (insertErr) return { error: `Could not save datasheet asset: ${insertErr.message}` };
-
-  await revalidateVariantPublicPages(supabase, variantId);
-  return { success: true, url: publicUrl, asset };
 }

@@ -156,7 +156,7 @@ export function VariantEditTabs({
     await new Promise((r) => setTimeout(r, 350));
     try {
       const pdf = await uploadSpecSheetPdfFromPreview(variant.id, code);
-      if (pdf.error) {
+      if (pdf?.error) {
         toast.error(`Saved, but Spec Sheet PDF failed: ${pdf.error}`);
         setTab(prevTab);
         return false;
