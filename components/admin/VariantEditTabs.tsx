@@ -119,16 +119,27 @@ export function VariantEditTabs({
   const liveTitle = (data.productName || product?.name || data.name || variant.name || 'Variant').trim();
   const viewHref = product?.slug ? `/products/${product.slug}/${variant.slug}` : '#';
 
-  // Keep sheet productName + SKU series aligned with the selected family even when
-  // the family was already chosen before this page loaded (onChange alone won't fire).
+  // Keep sheet productName aligned with the selected family (e.g. after load or
+  // a server-side family rename). Never overwrite a manually typed Series (PWS
+  // instead of POW-SUP) — that lives behind seriesLinked === false.
   useEffect(() => {
     if (!productId || !product) return;
-    const wantSeries = deriveSeries(product.name);
+    const familyName = product.name;
     setData((prev) => {
-      if (prev.productName === product.name && prev.sku.series === wantSeries) return prev;
-      return applyFamilyName(prev, product.name);
+      const wantSeries = deriveSeries(familyName);
+      if (prev.productName === familyName) {
+        if (prev.seriesLinked && prev.sku.series !== wantSeries) {
+          return applyFamilyName(prev, familyName);
+        }
+        return prev;
+      }
+      // Family name drifted; keep a custom Series, only update productName.
+      if (prev.seriesLinked === false) {
+        return syncIdentityFromSku({ ...prev, productName: familyName });
+      }
+      return applyFamilyName(prev, familyName);
     });
-  }, [productId, product]);
+  }, [productId, product?.name]);
 
   /** Regenerate datasheet from Preview → replace bucket object + product_assets row. */
   async function syncDatasheetPdf(sheet: SpecSheetData = data): Promise<boolean> {

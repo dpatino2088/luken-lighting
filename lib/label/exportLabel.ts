@@ -8,14 +8,6 @@ function safeName(value: string, suffix: string): string {
   return `${safe}-${suffix}`;
 }
 
-function escapeHtml(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
-
 export type LabelPdfMeta = {
   description?: string | null;
   manufacturerSku?: string | null;
@@ -200,88 +192,14 @@ async function rasterizeLabelPreview(
   }
 }
 
-function labelLetterCss(): string {
-  return `
-@page {
-  size: letter;
-  margin: 0;
-}
-html, body {
-  margin: 0 !important;
-  padding: 0 !important;
-  background: #ffffff !important;
-  -webkit-print-color-adjust: exact !important;
-  print-color-adjust: exact !important;
-}
-body, body * {
-  visibility: visible !important;
-}
-#label-letter-sheet {
-  position: relative !important;
-  display: flex !important;
-  flex-direction: column !important;
-  box-sizing: border-box !important;
-  width: 215.9mm !important;
-  height: 279.4mm !important;
-  margin: 0 !important;
-  padding: 18mm !important;
-  background: #ffffff !important;
-  color: #111111 !important;
-  font-family: Helvetica, Arial, sans-serif !important;
-}
-#label-letter-sheet .label-letter-header {
-  margin: 0 0 10mm !important;
-  font-size: 11pt !important;
-  letter-spacing: 0.08em !important;
-  text-transform: uppercase !important;
-  color: #666666 !important;
-}
-#label-letter-sheet .label-letter-art {
-  line-height: 0 !important;
-  flex: 0 0 auto !important;
-}
-#label-letter-sheet .label-letter-art img {
-  display: block !important;
-  margin: 0 !important;
-  max-width: none !important;
-  max-height: none !important;
-  border: none !important;
-  image-rendering: -webkit-optimize-contrast;
-}
-#label-letter-sheet .label-letter-spacer {
-  flex: 1 1 auto !important;
-  min-height: 12mm !important;
-}
-#label-letter-sheet .label-letter-footer {
-  flex: 0 0 auto !important;
-  border-top: 1px solid #cccccc !important;
-  padding-top: 8mm !important;
-  font-size: 10pt !important;
-  line-height: 1.45 !important;
-  color: #111111 !important;
-  word-break: break-word !important;
-}
-#label-letter-sheet .label-letter-footer .label {
-  display: block !important;
-  color: #666666 !important;
-  text-transform: uppercase !important;
-  letter-spacing: 0.06em !important;
-  font-size: 8pt !important;
-  margin-bottom: 1mm !important;
-}
-#label-letter-sheet .label-letter-footer p {
-  margin: 0 0 4mm !important;
-}
-#label-letter-sheet .label-letter-footer p:last-child {
-  margin-bottom: 0 !important;
-}
-`;
-}
-
 /**
  * US Letter PDF for the manufacturer: label artwork at the top (rasterised from
- * the live preview so type cannot reflow past the trim), identifying text in
- * the footer for PRO.
+ * the live preview so type cannot reflow past the trim), identifying text in the
+ * footer for PRO.
+ *
+ * Built entirely in the browser with jsPDF — the artwork is already a PNG, so we
+ * do not call /api/spec-sheet-pdf (Chromium on Vercel). That path still serves
+ * Spec Sheets; Labels were failing with a bare HTTP 500 when Chromium died.
  */
 export async function exportLabelPdf(
   template: LabelTemplate,
@@ -302,61 +220,61 @@ export async function exportLabelPdf(
   const code = (meta.code || '').trim() || '—';
   const sizeLine = `${template.width_mm} × ${template.height_mm} mm`;
 
-  const sheetHtml = `<div id="label-letter-sheet">
-  <p class="label-letter-header">Label artwork · ${escapeHtml(sizeLine)}</p>
-  <div class="label-letter-art">
-    <img
-      src="${art.dataUrl}"
-      alt="Label ${escapeHtml(sizeLine)}"
-      style="width:${art.widthMm}mm;height:${art.heightMm}mm;"
-    />
-  </div>
-  <div class="label-letter-spacer" aria-hidden="true"></div>
-  <div class="label-letter-footer">
-    <p><span class="label">Description</span>${escapeHtml(description)}</p>
-    <p><span class="label">Manufacturer SKU</span>${escapeHtml(manufacturerSku)}</p>
-    <p><span class="label">Luken SKU</span>${escapeHtml(code)}</p>
-  </div>
-</div>`;
+  const { jsPDF } = await import('jspdf');
+  const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
+  const pageW = pdf.internal.pageSize.getWidth();
+  const pageH = pdf.internal.pageSize.getHeight();
+  const pad = 18;
+  const contentW = pageW - pad * 2;
 
-  // Fonts are already baked into the PNG — no need to ship app stylesheets.
-  const snapshot = {
-    css: labelLetterCss(),
-    styleHrefs: [] as string[],
-    htmlClass: '',
-    bodyClass: '',
-  };
+  // Header
+  pdf.setFont('helvetica', 'normal');
+  pdf.setFontSize(11);
+  pdf.setTextColor(102, 102, 102);
+  pdf.text(`LABEL ARTWORK · ${sizeLine}`.toUpperCase(), pad, pad + 4);
 
-  const res = await fetch('/api/spec-sheet-pdf', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    credentials: 'same-origin',
-    body: JSON.stringify({
-      html: sheetHtml,
-      css: snapshot.css,
-      styleHrefs: snapshot.styleHrefs,
-      htmlClass: snapshot.htmlClass,
-      bodyClass: snapshot.bodyClass,
-      rootId: 'label-letter-sheet',
-      pageSize: null,
-      background: '#FFFFFF',
-      mediaType: 'screen',
-      skipDocumentCss: true,
-    }),
-  });
+  // Artwork (physical mm size, top-left under header)
+  const artY = pad + 14;
+  pdf.addImage(art.dataUrl, 'PNG', pad, artY, art.widthMm, art.heightMm);
 
-  if (!res.ok) {
-    let detail = `HTTP ${res.status}`;
-    try {
-      const j = (await res.json()) as { error?: string };
-      if (j.error) detail = j.error;
-    } catch {
-      /* ignore */
-    }
-    throw new Error(detail);
+  // Footer block anchored to the bottom margin
+  const lineH = 4.2;
+  const labelH = 3.2;
+  const gap = 4;
+  const rows = [
+    { label: 'DESCRIPTION', value: description },
+    { label: 'MANUFACTURER SKU', value: manufacturerSku },
+    { label: 'LUKEN SKU', value: code },
+  ];
+
+  const valueLines = rows.map((row) =>
+    pdf.splitTextToSize(row.value, contentW) as string[]
+  );
+  const blockH =
+    1 + // rule
+    8 + // padding above first label
+    valueLines.reduce((sum, lines) => sum + labelH + lines.length * lineH + gap, 0);
+
+  let y = pageH - pad - blockH;
+  pdf.setDrawColor(204, 204, 204);
+  pdf.setLineWidth(0.25);
+  pdf.line(pad, y, pageW - pad, y);
+  y += 8;
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const lines = valueLines[i];
+    pdf.setFontSize(8);
+    pdf.setTextColor(102, 102, 102);
+    pdf.text(row.label, pad, y);
+    y += labelH;
+    pdf.setFontSize(10);
+    pdf.setTextColor(17, 17, 17);
+    pdf.text(lines, pad, y);
+    y += lines.length * lineH + gap;
   }
 
-  return res.blob();
+  return pdf.output('blob');
 }
 
 /**

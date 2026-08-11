@@ -21,7 +21,7 @@
  * 2 · Version reaches the Name and the Short SKU, so a duplicate marked COPY is
  *     visible in the list instead of hiding at the tail of the Long SKU.
  */
-export const SKU_RULES_VERSION = 2;
+export const SKU_RULES_VERSION = 3;
 
 export interface SkuOption {
   /** Code stored in the SKU / used as the option value. */
@@ -64,8 +64,10 @@ export interface SkuState {
   watts: string;
   wattsCustom: string; // custom wattage (e.g. 18) when watts === 'CUSTOM'
   driver: string;
-  driverV: string;      // standard voltage/current code or 'CUSTOM'
-  driverVCustom: string; // custom voltage/current when driverV === 'CUSTOM'
+  /** Mains / enter voltage (120V, 220V…). Separate from CC/CV output. */
+  driverIn: string;
+  driverV: string;      // CC (mA) or CV (V DC) output code, or 'CUSTOM'
+  driverVCustom: string; // custom CC/CV when driverV === 'CUSTOM'
   ctrl: string;
   version: string;
   /** Custom version text when version === 'CUSTOM' (e.g. V5, Rev A). */
@@ -99,6 +101,7 @@ export const EMPTY_SKU_STATE: SkuState = {
   watts: '',
   wattsCustom: '',
   driver: '',
+  driverIn: '',
   driverV: '',
   driverVCustom: '',
   ctrl: '',
@@ -177,19 +180,39 @@ export const T = {
     RMCC: 'Remote CC driver',
     RMCV: 'Remote CV driver',
   },
+  /** Mains / enter voltage — not the CC/CV output. */
+  driverIn: {
+    '120V': '120V AC',
+    '220V': '220V AC',
+    '240V': '240V AC',
+    '277V': '277V AC',
+    '120/240': '120/240V AC',
+    '120/277': '120/277V AC',
+  },
+  /** Driver output: constant voltage (CV) or constant current (CC). */
   driverV: {
-    '120V': '120V',
-    '240V': '240V',
-    '277V': '277V',
-    '48V': '48V DC',
-    '24V': '24V DC',
     '12V': '12V DC',
+    '15V': '15V DC',
+    '18V': '18V DC',
+    '24V': '24V DC',
+    '36V': '36V DC',
+    '48V': '48V DC',
     '32V': '32V AC',
+    '160MA': '160mA',
     '180MA': '180mA',
+    '200MA': '200mA',
     '250MA': '250mA',
+    '300MA': '300mA',
     '350MA': '350mA',
+    '400MA': '400mA',
+    '450MA': '450mA',
     '500MA': '500mA',
+    '550MA': '550mA',
+    '600MA': '600mA',
     '700MA': '700mA',
+    '750MA': '750mA',
+    '800MA': '800mA',
+    '850MA': '850mA',
     '900MA': '900mA',
     '1000MA': '1000mA',
   },
@@ -197,9 +220,14 @@ export const T = {
     ND: 'Non-dimmable',
     PHD: 'Phase dimmable',
     '010': '0–10V dimming',
+    '110': '1–10V dimming',
     DALI: 'DALI',
     DMX: 'DMX',
     RFD: 'RF dimmable',
+    CAS: 'Casambi',
+    ZIG: 'Zigbee',
+    PUSH: 'Push dimming',
+    DNI: 'Driver not included',
   },
   shape: { R: 'Round', S: 'Square', L: 'Linear', RT: 'Rectangular', ACC: 'Accessory' },
   accessoryType: {
@@ -295,21 +323,39 @@ export function skuProfileName(code: string): string {
   return (T.profile as Record<string, string>)[c] ?? c;
 }
 
-/** Readable Driver / Control summary from the SKU (e.g. "Remote CC driver / 120V / 0–10V dimming"). */
+/** Readable Driver / Control summary (e.g. "Remote CC / 350mA / 120V AC / 0–10V"). */
 export function skuDriverControlText(state: SkuState): string {
+  const s = normalizeDriverFields(state);
   const parts: string[] = [];
-  const driver = state.driver.trim();
+  const driver = s.driver.trim();
   if (driver) parts.push((T.driver as Record<string, string>)[driver] ?? driver);
-  const driverV =
-    state.driverV === 'CUSTOM' ? state.driverVCustom.trim() : state.driverV.trim();
+  const driverV = s.driverV === 'CUSTOM' ? (s.driverVCustom || '').trim() : (s.driverV || '').trim();
   if (driverV) {
     parts.push(
-      state.driverV === 'CUSTOM' ? driverV : ((T.driverV as Record<string, string>)[driverV] ?? driverV),
+      s.driverV === 'CUSTOM' ? driverV : ((T.driverV as Record<string, string>)[driverV] ?? driverV),
     );
   }
-  const ctrl = state.ctrl.trim();
+  const driverIn = (s.driverIn || '').trim();
+  if (driverIn) parts.push((T.driverIn as Record<string, string>)[driverIn] ?? driverIn);
+  const ctrl = s.ctrl.trim();
   if (ctrl) parts.push((T.ctrl as Record<string, string>)[ctrl] ?? ctrl);
   return parts.join(' / ');
+}
+
+/** Input / mains codes that used to live in `driverV` before the split. */
+const LEGACY_INPUT_IN_DRIVER_V = new Set(Object.keys(T.driverIn));
+
+/**
+ * Move a legacy input-voltage code from `driverV` → `driverIn` when the new
+ * field is empty (sheets saved before Enter Voltage was a separate question).
+ */
+export function normalizeDriverFields(state: SkuState): SkuState {
+  const driverV = (state.driverV || '').trim();
+  const driverIn = (state.driverIn || '').trim();
+  if (!driverIn && driverV && LEGACY_INPUT_IN_DRIVER_V.has(driverV)) {
+    return { ...state, driverIn: driverV, driverV: '' };
+  }
+  return state;
 }
 
 // ── Dropdown option lists (with optgroups where the HTML used them) ──────────
@@ -362,6 +408,7 @@ export function enterAccessorySkuMode(state: SkuState): SkuState {
     watts: '',
     wattsCustom: '',
     driver: '',
+    driverIn: '',
     driverV: '',
     driverVCustom: '',
     ctrl: '',
@@ -595,21 +642,42 @@ export const DRIVER_OPTIONS: SkuOption[] = [
   { value: 'RMCV', label: 'RMCV – Remote constant voltage' },
 ];
 
+/** Mains / enter voltage — separate from CC/CV output. */
+export const DRIVER_IN_OPTIONS: SkuOption[] = [
+  { value: '120V', label: '120V AC' },
+  { value: '220V', label: '220V AC' },
+  { value: '240V', label: '240V AC' },
+  { value: '277V', label: '277V AC' },
+  { value: '120/240', label: '120/240V AC' },
+  { value: '120/277', label: '120/277V AC' },
+];
+
+/** Driver output only: constant voltage (CV) or constant current (CC). */
 export const DRIVER_V_OPTIONS: SkuOption[] = [
-  { value: '120V', label: '120V', group: 'Voltage' },
-  { value: '240V', label: '240V', group: 'Voltage' },
-  { value: '277V', label: '277V', group: 'Voltage' },
-  { value: '48V', label: '48V DC', group: 'Voltage' },
-  { value: '24V', label: '24V DC', group: 'Voltage' },
-  { value: '12V', label: '12V DC', group: 'Voltage' },
-  { value: '32V', label: '32V AC', group: 'Voltage' },
-  { value: '180MA', label: '180mA', group: 'Constant current' },
-  { value: '250MA', label: '250mA', group: 'Constant current' },
-  { value: '350MA', label: '350mA', group: 'Constant current' },
-  { value: '500MA', label: '500mA', group: 'Constant current' },
-  { value: '700MA', label: '700mA', group: 'Constant current' },
-  { value: '900MA', label: '900mA', group: 'Constant current' },
-  { value: '1000MA', label: '1000mA', group: 'Constant current' },
+  { value: '12V', label: '12V DC', group: 'Constant voltage (CV)' },
+  { value: '15V', label: '15V DC', group: 'Constant voltage (CV)' },
+  { value: '18V', label: '18V DC', group: 'Constant voltage (CV)' },
+  { value: '24V', label: '24V DC', group: 'Constant voltage (CV)' },
+  { value: '36V', label: '36V DC', group: 'Constant voltage (CV)' },
+  { value: '48V', label: '48V DC', group: 'Constant voltage (CV)' },
+  { value: '32V', label: '32V AC', group: 'Constant voltage (CV)' },
+  { value: '160MA', label: '160mA', group: 'Constant current (CC)' },
+  { value: '180MA', label: '180mA', group: 'Constant current (CC)' },
+  { value: '200MA', label: '200mA', group: 'Constant current (CC)' },
+  { value: '250MA', label: '250mA', group: 'Constant current (CC)' },
+  { value: '300MA', label: '300mA', group: 'Constant current (CC)' },
+  { value: '350MA', label: '350mA', group: 'Constant current (CC)' },
+  { value: '400MA', label: '400mA', group: 'Constant current (CC)' },
+  { value: '450MA', label: '450mA', group: 'Constant current (CC)' },
+  { value: '500MA', label: '500mA', group: 'Constant current (CC)' },
+  { value: '550MA', label: '550mA', group: 'Constant current (CC)' },
+  { value: '600MA', label: '600mA', group: 'Constant current (CC)' },
+  { value: '700MA', label: '700mA', group: 'Constant current (CC)' },
+  { value: '750MA', label: '750mA', group: 'Constant current (CC)' },
+  { value: '800MA', label: '800mA', group: 'Constant current (CC)' },
+  { value: '850MA', label: '850mA', group: 'Constant current (CC)' },
+  { value: '900MA', label: '900mA', group: 'Constant current (CC)' },
+  { value: '1000MA', label: '1000mA', group: 'Constant current (CC)' },
   { value: 'CUSTOM', label: 'Custom — enter below', group: 'Custom' },
 ];
 
@@ -617,9 +685,14 @@ export const CTRL_OPTIONS: SkuOption[] = [
   { value: 'ND', label: 'ND – Non-dimmable' },
   { value: 'PHD', label: 'PHD – Phase dimmable' },
   { value: '010', label: '010 – 0–10V dimming' },
+  { value: '110', label: '110 – 1–10V dimming' },
   { value: 'DALI', label: 'DALI' },
   { value: 'DMX', label: 'DMX' },
   { value: 'RFD', label: 'RFD – RF dimmable' },
+  { value: 'CAS', label: 'CAS – Casambi' },
+  { value: 'ZIG', label: 'ZIG – Zigbee' },
+  { value: 'PUSH', label: 'PUSH – Push dimming' },
+  { value: 'DNI', label: 'DNI – Driver not included' },
 ];
 
 export const VERSION_OPTIONS: SkuOption[] = [
@@ -711,11 +784,15 @@ export function buildSku(state: SkuState): SkuResult {
   // newer fields (track / profile / mounting), so their raw `sku` object is
   // missing those keys. Merge onto the empty state so `.trim()` never hits
   // `undefined` (the public product page calls this with the raw stored sku).
-  state = { ...EMPTY_SKU_STATE, ...state };
+  state = normalizeDriverFields({ ...EMPTY_SKU_STATE, ...state });
   const dimRaw = state.dim === 'CUSTOM' ? state.dimCustom.trim() : state.dim.trim();
   const shape = state.shape.trim();
   const length = state.length.trim();
   const driver = state.driver.trim();
+  const driverIn = state.driverIn.trim();
+  const driverInLabel = driverIn
+    ? (T.driverIn[driverIn as keyof typeof T.driverIn] || driverIn)
+    : '';
   const driverVIsCustom = state.driverV === 'CUSTOM';
   // Code segment: sanitized custom text (e.g. "48V DC" → "48VDC") or the standard code.
   const driverVCode = driverVIsCustom
@@ -771,10 +848,15 @@ export function buildSku(state: SkuState): SkuResult {
     // Name body = short segments without the leading series (same as fixtures).
     const shortBody = (series && shortSegs[0] === series ? shortSegs.slice(1) : shortSegs).join(' ');
     const nameBody = segs.filter((s) => s.inName).map((s) => s.val).join(' ');
-    const shortDesc = segs
-      .filter((s) => s.inShort && s.desc)
-      .map((s) => s.desc)
-      .join(' / ');
+    const shortDesc =
+      segs
+        .filter((s) => s.inShort && s.desc)
+        .map((s) => s.desc)
+        .join(' / ') ||
+      segs
+        .filter((s) => s.desc)
+        .map((s) => s.desc)
+        .join(' / ');
     const longDesc = segs
       .filter((s) => s.desc)
       .map((s) => s.desc)
@@ -907,11 +989,23 @@ export function buildSku(state: SkuState): SkuResult {
     add(state.watts.trim(), false, translate('watts', state.watts.trim()));
   }
 
-  if (driver) {
-    const driverDesc =
-      (translate('driver', driver) ?? '') + (driverVLabel ? ' / ' + driverVLabel : '');
-    add(driver, false, driverDesc);
-    if (driverVCode) add(driverVCode, false, null); // desc already merged above
+  // Driver → CC/CV output → Enter voltage (Long SKU only).
+  if (driver || driverIn || driverVCode) {
+    const extras = [driverVLabel, driverInLabel].filter(Boolean).join(' / ');
+    if (driver) {
+      add(
+        driver,
+        false,
+        (translate('driver', driver) ?? '') + (extras ? ' / ' + extras : ''),
+      );
+      if (driverVCode) add(driverVCode, false, null);
+      if (driverIn) add(driverIn, false, null);
+    } else if (driverVCode) {
+      add(driverVCode, false, extras || driverVLabel || null);
+      if (driverIn) add(driverIn, false, null);
+    } else {
+      add(driverIn, false, driverInLabel);
+    }
   }
 
   add(state.ctrl.trim(), false, translate('ctrl', state.ctrl.trim()));
@@ -929,14 +1023,18 @@ export function buildSku(state: SkuState): SkuResult {
   const shortBody = (series && shortSegs[0] === series ? shortSegs.slice(1) : shortSegs).join(' ');
   // Concise commercial name body: size + trim + color + source (no series/socket).
   const nameBody = segs.filter((s) => s.inName).map((s) => s.val).join(' ');
-  const shortDesc = segs
-    .filter((s) => s.inShort && s.desc)
-    .map((s) => s.desc)
-    .join(' / ');
   const longDesc = segs
     .filter((s) => s.desc)
     .map((s) => s.desc)
     .join(' / ');
+  // Short description prefers Short-SKU tokens (size, mount, optic…). Power
+  // supplies / drivers often have none of those — watts & electrical live on the
+  // Long SKU only — so fall back to the long description instead of leaving blank.
+  const shortDesc =
+    segs
+      .filter((s) => s.inShort && s.desc)
+      .map((s) => s.desc)
+      .join(' / ') || longDesc;
 
   return {
     shortCode: shortSegs.join('-'),

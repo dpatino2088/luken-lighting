@@ -38,9 +38,16 @@ export function SheetPreview({
   const identity = deriveIdentity(data);
   const title = identity.name || data.productName;
   // CODE bar = Short SKU (commercial stem). Grey box = Long SKU (unique config).
+  // Power supplies / drivers often have Short = series only (e.g. PWS) because
+  // watts & electrical live on the Long SKU — in that case show Long so CODE
+  // matches Product "Code / SKU". Normal luminaires keep the Short stem.
   const shortCode = (r.shortCode || '').trim();
   const longCode = (r.longCode || shortCode || identity.code || '').trim();
-  const code = shortCode;
+  const series = (data.sku.series || '').trim();
+  const code =
+    series && shortCode === series && longCode !== shortCode
+      ? longCode
+      : shortCode || longCode;
   const description = identity.description;
   const colorName = resolveColor(data.sku).desc || '';
   const driverControl = skuDriverControlText(data.sku);

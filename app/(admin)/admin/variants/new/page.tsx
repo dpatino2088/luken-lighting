@@ -17,6 +17,8 @@ import {
   applyFamilyName,
   applyFooterDefault,
   createDefaultSpecSheet,
+  deriveSeries,
+  syncIdentityFromSku,
   withAutoLastUpdate,
   type SpecSheetData,
 } from '@/lib/sku/specSheet';
@@ -79,10 +81,25 @@ export default function NewVariantPage() {
   }, []);
 
   // When a family is chosen, sync productName + SKU series (Prueba → PRU).
+  // Respect a manual Series override (seriesLinked === false).
   useEffect(() => {
     if (!selectedProductId) return;
     const p = products.find((x) => x.id === selectedProductId);
-    if (p) setData((prev) => applyFamilyName(prev, p.name));
+    if (!p) return;
+    const familyName = p.name;
+    setData((prev) => {
+      const wantSeries = deriveSeries(familyName);
+      if (prev.productName === familyName) {
+        if (prev.seriesLinked && prev.sku.series !== wantSeries) {
+          return applyFamilyName(prev, familyName);
+        }
+        return prev;
+      }
+      if (prev.seriesLinked === false) {
+        return syncIdentityFromSku({ ...prev, productName: familyName });
+      }
+      return applyFamilyName(prev, familyName);
+    });
   }, [selectedProductId, products]);
 
   const skuPreview = useMemo(() => buildSku(data.sku), [data.sku]);

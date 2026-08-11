@@ -18,6 +18,7 @@ import {
   OPTIC_OPTIONS,
   WATTS_OPTIONS,
   DRIVER_OPTIONS,
+  DRIVER_IN_OPTIONS,
   DRIVER_V_OPTIONS,
   CTRL_OPTIONS,
   VERSION_OPTIONS,
@@ -462,13 +463,14 @@ export function SkuFields({
           }
         >
           <SkuSelect label="Driver" value={state.driver} onChange={(v) => set({ driver: v })} options={DRIVER_OPTIONS} />
-          <SkuSelect label="Voltage / current" value={state.driverV} onChange={(v) => set({ driverV: v })} options={DRIVER_V_OPTIONS} />
+          <SkuSelect label="CC / CV" value={state.driverV} onChange={(v) => set({ driverV: v })} options={DRIVER_V_OPTIONS} />
           {state.driverV === 'CUSTOM' && (
             <div>
-              <label className={labelClass}>Custom voltage / current</label>
+              <label className={labelClass}>Custom CC / CV</label>
               <input className={inputClass} value={state.driverVCustom} onChange={(e) => set({ driverVCustom: e.target.value })} placeholder="e.g. 48V DC, 1400mA" />
             </div>
           )}
+          <SkuSelect label="Enter voltage" value={state.driverIn} onChange={(v) => set({ driverIn: v })} options={DRIVER_IN_OPTIONS} />
           <SkuSelect label="Dimming / control" value={state.ctrl} onChange={(v) => set({ ctrl: v })} options={CTRL_OPTIONS} />
           {!trackMode && !profileMode && (
             <>

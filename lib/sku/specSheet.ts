@@ -5,7 +5,7 @@
 // ──────────────────────────────────────────────────────────────────────────
 
 import type { SkuResult, SkuState } from './skuRules';
-import { EMPTY_SKU_STATE, buildSku, copyMarker, hasCopyMarker } from './skuRules';
+import { EMPTY_SKU_STATE, buildSku, copyMarker, hasCopyMarker, normalizeDriverFields } from './skuRules';
 
 export interface ConfigRow {
   /** Long/Short SKU — used for matching; not the primary UI label. */
@@ -502,6 +502,9 @@ export function normalizeSpecSheet(raw: Partial<SpecSheetData> | null | undefine
   if (!merged.sku.mounting && typeof legacyMontaje === 'string' && legacyMontaje.trim()) {
     merged.sku = { ...merged.sku, mounting: legacyMontaje };
   }
+
+  // Migration: Enter voltage used to share `driverV` with CC/CV. Split them.
+  merged.sku = normalizeDriverFields(merged.sku);
 
   // Migration for legacy sheets saved before the auto/manual state was
   // persisted: infer which identity fields were hand-edited by comparing the

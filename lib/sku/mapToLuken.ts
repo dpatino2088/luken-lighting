@@ -52,9 +52,14 @@ const CONTROL_MAP: Record<string, string> = {
   ND: 'on-off',
   PHD: 'phase',
   '010': '0-10v',
+  '110': '1-10v',
   DALI: 'dali',
   DMX: 'dmx',
   RFD: 'push',
+  CAS: 'casambi',
+  ZIG: 'zigbee',
+  PUSH: 'push',
+  DNI: 'driver-not-included',
 };
 
 export function controlTypes(ctrl: string): string[] {
@@ -201,7 +206,9 @@ export function specSheetToVariantFields(data: SpecSheetData, environment: strin
     cri: criValue(data.sku.cri === 'CUSTOM' ? data.sku.criCustom : data.sku.cri),
     beam_angle: beamValue(data.sku.optic === 'CUSTOM' ? data.sku.opticCustom : data.sku.optic),
     voltage:
-      (data.sku.driverV === 'CUSTOM' ? data.sku.driverVCustom.trim() : data.sku.driverV.trim()) || null,
+      (data.sku.driverIn || '').trim() ||
+      (data.sku.driverV === 'CUSTOM' ? data.sku.driverVCustom.trim() : data.sku.driverV.trim()) ||
+      null,
     finish: resolveColor(data.sku).desc,
     material: data.material.trim() || null,
     ip_rating: data.ipRating.trim() || null,

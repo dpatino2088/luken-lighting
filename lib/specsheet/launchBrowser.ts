@@ -42,7 +42,7 @@ export async function launchPdfBrowser(): Promise<Browser> {
       defaultViewport: { width: 816, height: 1056, deviceScaleFactor: 1 },
       executablePath,
       headless: 'shell',
-      ignoreHTTPSErrors: true,
+      acceptInsecureCerts: true,
     });
   }
 
@@ -56,6 +56,6 @@ export async function launchPdfBrowser(): Promise<Browser> {
     headless: true,
     defaultViewport: { width: 816, height: 1056, deviceScaleFactor: 1 },
     args: ['--no-sandbox', '--disable-setuid-sandbox', '--font-render-hinting=none'],
-    ignoreHTTPSErrors: true,
+    acceptInsecureCerts: true,
   });
 }

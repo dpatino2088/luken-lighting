@@ -126,11 +126,12 @@ En todos los modos **menos** Accessories.
 | # | Pregunta | Tipo | Respuestas posibles |
 |---|---|---|---|
 | 1 | Driver | Lista | INT – Integrated · EXT – External · RMCC – Remote constant current · RMCV – Remote constant voltage |
-| 2 | Voltage / current | Lista | **Voltage:** 120V · 240V · 277V · 48V DC · 24V DC · 12V DC · 32V AC<br>**Constant current:** 180mA · 250mA · 350mA · 500mA · 700mA · 900mA · 1000mA<br>Custom |
-| 3 | Custom voltage / current *(solo si Custom)* | Ingresar valor | Ej. `48V DC`, `1400mA` |
-| 4 | Dimming / control | Lista | ND – Non-dimmable · PHD – Phase dimmable · 010 – 0–10V dimming · DALI · DMX · RFD – RF dimmable |
-| 5 | Version | Lista | V2 · V3 · V4 · Custom — *solo en modo luminaria estándar; en Track y Profiles se pregunta en Identity* |
-| 6 | Custom version *(solo si Version = Custom)* | Ingresar valor | Ej. `V5`, `Rev A` |
+| 2 | CC / CV | Lista | **CV:** 12V · 15V · 18V · 24V · 36V · 48V DC · 32V AC<br>**CC:** 160mA · 180mA · 200mA · 250mA · 300mA · 350mA · 400mA · 450mA · 500mA · 550mA · 600mA · 700mA · 750mA · 800mA · 850mA · 900mA · 1000mA<br>Custom |
+| 3 | Custom CC / CV *(solo si Custom)* | Ingresar valor | Ej. `48V DC`, `1400mA` |
+| 4 | Enter voltage | Lista | 120V · 220V · 240V · 277V · 120/240V · 120/277V AC |
+| 5 | Dimming / control | Lista | ND – Non-dimmable · PHD – Phase · 010 – 0–10V · 110 – 1–10V · DALI · DMX · RFD – RF · CAS – Casambi · ZIG – Zigbee · PUSH – Push · DNI – Driver not included |
+| 6 | Version | Lista | V2 · V3 · V4 · Custom — *solo en modo luminaria estándar; en Track y Profiles se pregunta en Identity* |
+| 7 | Custom version *(solo si Version = Custom)* | Ingresar valor | Ej. `V5`, `Rev A` |
 
 ---
 
@@ -197,7 +198,7 @@ Color, Source, Socket (sólo si es un casquillo real: GU10, E27… `MOD` no entr
 porque el módulo integrado ya lo dice el Source), CCT y Optic / beam.
 
 **Long SKU** — todo lo anterior más `MOD` cuando corresponde, CRI, Power, Driver,
-Voltage / current, Dimming / control y Version, en el orden del cuestionario. El
+CC / CV, Enter voltage, Dimming / control y Version, en el orden del cuestionario. El
 corto ya no es un prefijo del largo: el CRI queda entre el socket y el CCT.
 
 **Fuera del SKU** — Lumen, IP rating, Electrical class, Material y las dimensiones.
