@@ -27,14 +27,20 @@ export async function updateVariant(variantId: string, formData: FormData) {
   const supabase = await createClient();
   if (!supabase) return { error: 'Supabase not configured' };
 
+  const costRaw = formData.get('cost_usd');
+  const priceRaw = formData.get('distributor_price');
+  const costStr = costRaw == null ? '' : String(costRaw).trim();
+  const priceStr = priceRaw == null ? '' : String(priceRaw).trim();
+
   // Pricing / status. (Relationships — family/category/environment — are owned by
   // the Builder tab in the embedded editor, so we only touch them here when the
   // standalone form actually submits them.)
   const data: Record<string, any> = {
-    manufacturer: formData.get('manufacturer') || null,
-    manufacturer_sku: formData.get('manufacturer_sku') || null,
-    cost_usd: formData.get('cost_usd') ? Number(formData.get('cost_usd')) : null,
-    distributor_price: formData.get('distributor_price') ? Number(formData.get('distributor_price')) : null,
+    manufacturer: (formData.get('manufacturer') as string)?.trim() || null,
+    manufacturer_sku: (formData.get('manufacturer_sku') as string)?.trim() || null,
+    cost_usd: costStr !== '' && Number.isFinite(Number(costStr)) ? Number(costStr) : null,
+    distributor_price:
+      priceStr !== '' && Number.isFinite(Number(priceStr)) ? Number(priceStr) : null,
     is_active: formData.getAll('is_active').includes('true'),
     is_featured: formData.getAll('is_featured').includes('true'),
   };

@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { ArrowLeft, Eye, Save, Printer } from 'lucide-react';
 import { getLatestAssetUrl } from '@/lib/assets';
 import { Button } from '@/components/ui/Button';
-import { VariantEditForm } from '@/components/admin/VariantEditForm';
+import { VariantEditForm, type CommercialFields } from '@/components/admin/VariantEditForm';
 import { FileUploadSection } from '@/components/admin/FileUploadSection';
 import { VariantActionsMenu } from '@/components/admin/VariantActionsMenu';
 import { VariantBuilderPanel } from '@/components/specsheet/VariantBuilderPanel';
@@ -88,6 +88,26 @@ export function VariantEditTabs({
   const [productId, setProductId] = useState(variant.product_id || '');
   const [categoryId, setCategoryId] = useState(variant.category_id || '');
   const [environment, setEnvironment] = useState(variant.environment || '');
+  // Commercial fields live here so Save always persists them — even when the
+  // Product tab is not focused (FormData from a [hidden] panel was unreliable).
+  const [commercial, setCommercial] = useState<CommercialFields>(() => ({
+    manufacturer: variant.manufacturer || '',
+    manufacturerSku: variant.manufacturer_sku || '',
+    costUsd: variant.cost_usd ?? null,
+    distributorPrice: variant.distributor_price ?? null,
+    isActive: Boolean(variant.is_active),
+  }));
+  useEffect(() => {
+    setCommercial({
+      manufacturer: variant.manufacturer || '',
+      manufacturerSku: variant.manufacturer_sku || '',
+      costUsd: variant.cost_usd ?? null,
+      distributorPrice: variant.distributor_price ?? null,
+      isActive: Boolean(variant.is_active),
+    });
+    // Re-sync only when the server variant row changes (navigation / refresh after Save).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [variant.id, variant.updated_at]);
   // Local assets so Save replaces the datasheet slot immediately in File & Assets.
   const [liveAssets, setLiveAssets] = useState<ProductAsset[]>(assets);
   useEffect(() => {
@@ -214,14 +234,22 @@ export function VariantEditTabs({
       setData((prev) => ({ ...prev, lastUpdate: identity.lastUpdate! }));
     }
 
-    const form = document.getElementById('variant-product-form') as HTMLFormElement | null;
-    if (form) {
-      const pricing = await updateVariant(variant.id, new FormData(form));
-      if (pricing.error) {
-        toast.error(pricing.error);
-        setSaving(false);
-        return;
-      }
+    const formData = new FormData();
+    formData.set('manufacturer', commercial.manufacturer);
+    formData.set('manufacturer_sku', commercial.manufacturerSku);
+    formData.set('cost_usd', commercial.costUsd == null ? '' : String(commercial.costUsd));
+    formData.set(
+      'distributor_price',
+      commercial.distributorPrice == null ? '' : String(commercial.distributorPrice)
+    );
+    formData.set('is_active', 'false');
+    if (commercial.isActive) formData.append('is_active', 'true');
+
+    const pricing = await updateVariant(variant.id, formData);
+    if (pricing.error) {
+      toast.error(pricing.error);
+      setSaving(false);
+      return;
     }
 
     const nextSignature = sheetSignature(
@@ -337,9 +365,10 @@ export function VariantEditTabs({
       {/* Builder */}
       <div hidden={tab !== 'builder'} className="space-y-4">
         <p className="text-[11px] text-gray-500">
-          Generates the SKU, descriptions and the technical sheet. <strong>Save</strong> updates the variant
-          and rebuilds the public Spec Sheet PDF only when the sheet changed. Pricing and files live in the{' '}
-          <strong>Product</strong> / <strong>File &amp; Assets</strong> tabs.
+          Generates the SKU, descriptions and the technical sheet. <strong>Save</strong> updates the
+          variant (including Manufacturer SKU &amp; pricing from the Product tab) and rebuilds the
+          public Spec Sheet PDF only when the sheet changed. Files live in{' '}
+          <strong>File &amp; Assets</strong>.
         </p>
 
         {/* Belongs to (family) — same as the create flow; saved with "Save builder" */}
@@ -408,8 +437,8 @@ export function VariantEditTabs({
       <div hidden={tab !== 'product'} className="space-y-6">
         <IdentityFields data={data} sync={sync} />
         <p className="text-[11px] text-gray-500">
-          Identity above, the family relationship and all technical specs & dimensions are built and saved from the{' '}
-          <strong>Builder</strong> tab (“Save builder”). Only pricing and status below are saved with “Save changes”.
+          Identity above comes from the Builder. Manufacturer SKU, pricing and status below are
+          saved together with the top <strong>Save</strong> button (from any tab).
         </p>
         <VariantEditForm
           variant={variant}
@@ -417,6 +446,8 @@ export function VariantEditTabs({
           products={products}
           settings={settings}
           embedded
+          commercial={commercial}
+          onCommercialChange={(patch) => setCommercial((prev) => ({ ...prev, ...patch }))}
         />
       </div>
 
