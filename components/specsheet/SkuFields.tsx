@@ -270,9 +270,9 @@ export function SkuFields({
             press: Save drops it as soon as the copy stands on its own. */}
         {hasCopyMarker(state) && (
           <p className="border-t border-gray-700 px-5 py-3 text-[11px] text-gray-400">
-            Duplicate — <span className="font-mono text-gray-200">COPY</span> keeps this apart from
-            the variant it came from. Change something (optic, CCT, finish…) and Save: the mark
-            comes off on its own once the code stands alone.
+            Duplicate — <span className="font-mono text-gray-200">{state.versionCustom || 'COPY'}</span>{' '}
+            keeps this apart from the variant it came from. Change something (optic, CCT, finish…)
+            and Save: the mark comes off on its own once the code stands alone.
           </p>
         )}
       </div>

@@ -705,9 +705,14 @@ export const VERSION_OPTIONS: SkuOption[] = [
 /** The Version segment a duplicate carries until it is given a real difference. */
 export const COPY_MARKER = 'COPY';
 
-/** The marker for the nth copy: COPY, COPY2, COPY3… */
+/**
+ * Marker for the nth duplicate of a variant.
+ * Original = 1 (no marker). 1st copy → COPY2, 2nd → COPY3, …
+ * (Never plain "COPY" — that looked like a boolean and skipped the "2".)
+ */
 export function copyMarker(n = 1): string {
-  return n <= 1 ? COPY_MARKER : `${COPY_MARKER}${n}`;
+  const ordinal = Math.max(1, Math.floor(n)) + 1; // 1st duplicate → 2
+  return `${COPY_MARKER}${ordinal}`;
 }
 
 /** Whether this SKU is still marked as a duplicate of another variant. */

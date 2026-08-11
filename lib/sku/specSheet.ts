@@ -341,31 +341,47 @@ export function deriveIdentity(d: SpecSheetData): {
 }
 
 /**
- * Force identity (Name / Code / descriptions) from the current SKU and re-enable
- * auto-sync flags. Builder is the source of truth — call whenever SKU inputs
- * change or right before save so stale manual overrides cannot linger.
+ * Sync identity (Name / Code / descriptions) from the current SKU.
+ *
+ * Fields with `link.* === false` (edited by hand in Product → Identity) are kept.
+ * Pass `{ force: true }` to overwrite everything and re-enable auto (Re-apply,
+ * family change, copy marker).
  */
-export function syncIdentityFromSku(prev: SpecSheetData): SpecSheetData {
+export function syncIdentityFromSku(
+  prev: SpecSheetData,
+  opts?: { force?: boolean }
+): SpecSheetData {
   const derived = deriveIdentity(prev);
+  const force = opts?.force === true;
+  const link = force
+    ? { name: true, code: true, codeDescription: true, description: true }
+    : prev.link ?? { name: true, code: true, codeDescription: true, description: true };
+
+  const name = force || link.name ? derived.name : prev.name;
+  const code = force || link.code ? derived.code : prev.code;
+  const codeDescription =
+    force || link.codeDescription ? derived.codeDescription : prev.codeDescription;
+  const description = force || link.description ? derived.description : prev.description;
+
   if (
-    prev.name === derived.name &&
-    prev.code === derived.code &&
-    prev.codeDescription === derived.codeDescription &&
-    prev.description === derived.description &&
-    prev.link.name &&
-    prev.link.code &&
-    prev.link.codeDescription &&
-    prev.link.description
+    prev.name === name &&
+    prev.code === code &&
+    prev.codeDescription === codeDescription &&
+    prev.description === description &&
+    prev.link.name === link.name &&
+    prev.link.code === link.code &&
+    prev.link.codeDescription === link.codeDescription &&
+    prev.link.description === link.description
   ) {
     return prev;
   }
   return {
     ...prev,
-    link: { name: true, code: true, codeDescription: true, description: true },
-    name: derived.name,
-    code: derived.code,
-    codeDescription: derived.codeDescription,
-    description: derived.description,
+    link,
+    name,
+    code,
+    codeDescription,
+    description,
   };
 }
 
@@ -380,19 +396,25 @@ export function syncIdentityFromSku(prev: SpecSheetData): SpecSheetData {
  * descriptions — and clearing the marker is what turns it into a real variant.
  */
 export function applyCopyMarker(prev: SpecSheetData, n = 1): SpecSheetData {
-  return syncIdentityFromSku({
-    ...prev,
-    sku: { ...prev.sku, version: 'CUSTOM', versionCustom: copyMarker(n) },
-  });
+  return syncIdentityFromSku(
+    {
+      ...prev,
+      sku: { ...prev.sku, version: 'CUSTOM', versionCustom: copyMarker(n) },
+    },
+    { force: true }
+  );
 }
 
 /** Drop the copy mark: the sheet stops being a duplicate and rebuilds its identity. */
 export function clearCopyMarker(prev: SpecSheetData): SpecSheetData {
   if (!hasCopyMarker(prev.sku)) return prev;
-  return syncIdentityFromSku({
-    ...prev,
-    sku: { ...prev.sku, version: '', versionCustom: '' },
-  });
+  return syncIdentityFromSku(
+    {
+      ...prev,
+      sku: { ...prev.sku, version: '', versionCustom: '' },
+    },
+    { force: true }
+  );
 }
 
 /**

@@ -24,9 +24,8 @@ export interface SpecSheetSync {
  * sheet. Instantiating ONCE in the parent that owns `data` and share the
  * returned handlers with both the Builder and the Product tab.
  *
- * Builder SKU changes always re-sync Name / Code / descriptions (Builder is
- * source of truth). Hand edits in the Product tab last only until the next
- * SKU-driven change (or Re-apply).
+ * Builder SKU changes refresh only fields still marked (auto). Hand edits in
+ * Product → Identity stay until "Re-apply from SKU".
  */
 export function useSpecSheetSync(
   data: SpecSheetData,
@@ -87,11 +86,14 @@ export function useSpecSheetSync(
   const relinkAll = () => {
     onChange((prev) => {
       const nextSku = { ...prev.sku, series: deriveSeries(prev.productName) };
-      return syncIdentityFromSku({
-        ...prev,
-        sku: nextSku,
-        seriesLinked: true,
-      });
+      return syncIdentityFromSku(
+        {
+          ...prev,
+          sku: nextSku,
+          seriesLinked: true,
+        },
+        { force: true }
+      );
     });
   };
 

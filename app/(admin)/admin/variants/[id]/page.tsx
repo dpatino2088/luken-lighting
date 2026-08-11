@@ -56,6 +56,7 @@ export default async function EditVariantPage({ params }: Props) {
 
   return (
     <VariantEditTabs
+      key={variant.id}
       variant={variant}
       categories={categories || []}
       products={products || []}

@@ -93,8 +93,8 @@ export async function saveVariantBuilder(
   if (!supabase) return { error: 'Supabase not configured' };
 
   // Last updated is always the save day — never a manual field.
-  // Builder SKU is source of truth for identity — never persist a stale Name/Code
-  // left over from a previous configuration (manual link flags / old sheet data).
+  // Honour Product → Identity link flags: manual Name / Code / descriptions
+  // stay; only (auto) fields are refreshed from the Builder SKU.
   data = syncIdentityFromSku(withAutoLastUpdate(data));
 
   // A duplicate carries a COPY segment only so it does not collide with the
@@ -468,7 +468,8 @@ async function allocateCopyCode(
 ): Promise<{ code: string; slug: string }> {
   const root = stripCopySuffix(baseCode || 'VARIANT') || 'VARIANT';
   for (let n = 1; n <= 99; n++) {
-    const suffix = n === 1 ? '-COPY' : `-COPY${n}`;
+    // Align with copyMarker(): 1st copy → -COPY2, 2nd → -COPY3, …
+    const suffix = `-COPY${n + 1}`;
     const code = `${root}${suffix}`;
     const slug = slugify(code) || `variant-copy-${Date.now()}`;
     const [{ data: byCode }, { data: bySlug }] = await Promise.all([
@@ -482,7 +483,9 @@ async function allocateCopyCode(
 }
 
 /**
- * Find the copy marker (COPY, COPY2, …) that gives this sheet a free Long SKU.
+ * Find the copy marker (COPY2, COPY3, …) that gives this sheet a free Long SKU.
+ * The first duplicate is COPY2 (original = 1). Source COPY* markers must be
+ * stripped before calling this so numbers do not skip.
  *
  * The marker lives in the SKU, so the copy generates its own identity instead of
  * carrying a patched string the next save would overwrite.
@@ -534,8 +537,15 @@ export async function duplicateVariant(variantId: string) {
   // Identity comes from the marked SKU when there is a sheet to build it from, so
   // the copy's stored code is the one it regenerates. Sheet-less variants (typed
   // or imported identity) keep the old string suffix — there is nothing to build.
-  const sheet = sheetRow?.data
+  // Strip any existing COPY* on the source first — otherwise duplicating a copy
+  // (or a sheet that still carries COPY2) continues as COPY3/COPY4.
+  const rawSheet = sheetRow?.data
     ? normalizeSpecSheet(sheetRow.data as Partial<SpecSheetData>)
+    : null;
+  const sheet = rawSheet
+    ? hasCopyMarker(rawSheet.sku)
+      ? clearCopyMarker(rawSheet)
+      : rawSheet
     : null;
   const allocated = sheet ? await allocateCopyMarker(supabase, sheet) : null;
   const { code, slug } =
@@ -614,10 +624,11 @@ export async function duplicateVariant(variantId: string) {
         sheets.map((row) => {
           // The marker goes into the SKU, so the sheet generates the copy's code
           // on its own. Without it the copy would rebuild its source's identity
-          // and no save would ever go through.
-          const data = allocated
-            ? applyCopyMarker(normalizeSpecSheet(row.data as Partial<SpecSheetData>), allocated.n)
-            : row.data;
+          // and no save would ever go through. Always mark from a clean (non-COPY)
+          // base so numbers don't skip COPY2 → COPY3.
+          const base = normalizeSpecSheet(row.data as Partial<SpecSheetData>);
+          const clean = hasCopyMarker(base.sku) ? clearCopyMarker(base) : base;
+          const data = allocated ? applyCopyMarker(clean, allocated.n) : clean;
           return {
             variant_id: newId,
             product_id: row.product_id ?? source.product_id ?? null,
