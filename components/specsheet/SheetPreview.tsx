@@ -2,7 +2,7 @@
 
 import {
   certificationList,
-  deriveIdentity,
+  syncIdentityFromSku,
   primaryLumen,
   type SpecSheetData,
   type TechRow,
@@ -34,8 +34,9 @@ export function SheetPreview({
   familyOverview?: string | null;
 }) {
   const r = buildSku(data.sku);
-  // Always derive from current SKU so Preview never shows a previous configuration.
-  const identity = deriveIdentity(data);
+  // Honour Product → Identity link flags (manual Name / descriptions stay).
+  // Code bar still prefers Short/Long SKU geometry below.
+  const identity = syncIdentityFromSku(data);
   const title = identity.name || data.productName;
   // CODE bar = Short SKU (commercial stem). Grey box = Long SKU (unique config).
   // Power supplies / drivers often have Short = series only (e.g. PWS) because
