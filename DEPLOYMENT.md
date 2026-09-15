@@ -39,7 +39,13 @@ Before deploying to production, ensure:
    NEXT_PUBLIC_SUPABASE_URL=https://xxxxx.supabase.co
    NEXT_PUBLIC_SUPABASE_ANON_KEY=xxxxx
    NEXT_PUBLIC_SITE_URL=https://yourdomain.com
+   SUPABASE_SERVICE_ROLE_KEY=xxxxx
    ```
+
+   `SUPABASE_SERVICE_ROLE_KEY` is **server-only** (never `NEXT_PUBLIC_`). It is required for
+   Admin → Users (list / invite / change role / delete). Get it from Supabase → Project
+   Settings → API → `service_role` (secret). Without it, `/admin/users` shows
+   “Server not configured”.
 
 4. **Deploy**
    - Click "Deploy"

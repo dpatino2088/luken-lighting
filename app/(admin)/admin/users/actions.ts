@@ -22,7 +22,13 @@ export async function getUsers(): Promise<{ users: AdminUserRow[]; error?: strin
   if (!(await isCurrentUserAdmin())) return { users: [], error: 'Not authorized' };
 
   const admin = createAdminClient();
-  if (!admin) return { users: [], error: 'Server not configured' };
+  if (!admin) {
+    return {
+      users: [],
+      error:
+        'Server not configured: add SUPABASE_SERVICE_ROLE_KEY in Vercel (Settings → Environment Variables), then redeploy. The service role key is required to list and invite users.',
+    };
+  }
 
   const { data: list, error: listError } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
   if (listError) return { users: [], error: listError.message };
@@ -60,7 +66,12 @@ export async function inviteUser(formData: FormData): Promise<{ error?: string; 
   if (!VALID_ROLES.includes(role)) return { error: 'Invalid role' };
 
   const admin = createAdminClient();
-  if (!admin) return { error: 'Server not configured' };
+  if (!admin) {
+    return {
+      error:
+        'Server not configured: add SUPABASE_SERVICE_ROLE_KEY in Vercel Environment Variables, then redeploy.',
+    };
+  }
 
   const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
     data: { full_name: fullName },
@@ -86,7 +97,12 @@ export async function updateUserRole(userId: string, role: AppRole): Promise<{ e
   if (!VALID_ROLES.includes(role)) return { error: 'Invalid role' };
 
   const admin = createAdminClient();
-  if (!admin) return { error: 'Server not configured' };
+  if (!admin) {
+    return {
+      error:
+        'Server not configured: add SUPABASE_SERVICE_ROLE_KEY in Vercel Environment Variables, then redeploy.',
+    };
+  }
 
   // Some auth users predate the user_profiles table (or were created directly in
   // Supabase Auth) and have no profile row yet. A plain UPDATE would match zero
@@ -119,7 +135,12 @@ export async function deleteUser(userId: string): Promise<{ error?: string; succ
   if (!(await isCurrentUserAdmin())) return { error: 'Not authorized' };
 
   const admin = createAdminClient();
-  if (!admin) return { error: 'Server not configured' };
+  if (!admin) {
+    return {
+      error:
+        'Server not configured: add SUPABASE_SERVICE_ROLE_KEY in Vercel Environment Variables, then redeploy.',
+    };
+  }
 
   const { error } = await admin.auth.admin.deleteUser(userId);
   if (error) return { error: error.message };
