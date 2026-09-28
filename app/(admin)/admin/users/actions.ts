@@ -30,7 +30,7 @@ export async function getUsers(): Promise<{ users: AdminUserRow[]; error?: strin
     };
   }
 
-  const { data: list, error: listError } = await admin.auth.admin.listUsers({ page: 1, perPage: 1000 });
+  const { data: list, error: listError } = await admin.auth.admin.listUsers({ page: 1, perPage: 100 });
   if (listError) return { users: [], error: listError.message };
 
   const { data: profiles } = await admin.from('user_profiles').select('id, full_name, role');

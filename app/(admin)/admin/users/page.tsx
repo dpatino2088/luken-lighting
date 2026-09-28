@@ -21,11 +21,11 @@ export default async function AdminUsersPage() {
         <p className="text-gray-600">Invite team members and manage their access.</p>
       </div>
 
-      {error ? (
+      {error && (
         <div className="p-4 bg-red-50 border border-red-200 text-red-800 text-sm">{error}</div>
-      ) : (
-        <UsersManager initialUsers={users} currentUserId={currentUser?.id ?? null} />
       )}
+
+      <UsersManager initialUsers={users} currentUserId={currentUser?.id ?? null} />
     </div>
   );
 }

@@ -4,9 +4,11 @@ import { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import {
   componentFromType,
+  isAccessoriesType,
   SUBCATEGORY_OPTIONS,
   type ConfigRow,
 } from '@/lib/sku/specSheet';
+import { extractSkuColorCode } from '@/lib/sku/skuRules';
 import { AdminSelect } from '@/components/ui/AdminSelect';
 
 const fieldClass =
@@ -24,8 +26,19 @@ type FamilyVariant = {
   name: string;
   short_description: string | null;
   mounting_type: string | null;
+  finish: string | null;
   subcategory: string;
 };
+
+type KindFilter = 'all' | 'product' | 'accessory';
+
+function isAccessoryVariant(v: FamilyVariant): boolean {
+  return isAccessoriesType(v.subcategory) || /(?:^|-)ACC(?:-|$)/i.test(v.code || '');
+}
+
+function variantColor(v: FamilyVariant): string {
+  return extractSkuColorCode(v.code, v.finish) || '';
+}
 
 /** Component = Type only. Empty when the related variant has no Type set. */
 function suggestComponent(v: Pick<FamilyVariant, 'subcategory'>): string {
@@ -104,6 +117,9 @@ export function RelatedVariantsEditor({
   const [pickerOpen, setPickerOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [colorFilter, setColorFilter] = useState('');
+  const [kindFilter, setKindFilter] = useState<KindFilter>('all');
 
   useEffect(() => {
     if (currentProductId) setFamilyId(currentProductId);
@@ -143,7 +159,7 @@ export function RelatedVariantsEditor({
     (async () => {
       const { data: pvData, error: pvError } = await supabase
         .from('product_variants')
-        .select('id, code, name, short_description, mounting_type')
+        .select('id, code, name, short_description, mounting_type, finish')
         .eq('product_id', familyId)
         .eq('is_active', true)
         .order('code');
@@ -183,6 +199,7 @@ export function RelatedVariantsEditor({
           ...v,
           short_description: v.short_description ?? null,
           mounting_type: v.mounting_type ?? null,
+          finish: v.finish ?? null,
           subcategory: subById.get(v.id) || '',
         }))
       );
@@ -243,14 +260,42 @@ export function RelatedVariantsEditor({
     [variants, onSheetIds, onSheetCodes]
   );
 
+  const colorOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const v of available) {
+      const c = variantColor(v);
+      if (c) set.add(c);
+    }
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [available]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return available.filter((v) => {
+      if (colorFilter && variantColor(v) !== colorFilter) return false;
+      if (kindFilter === 'accessory' && !isAccessoryVariant(v)) return false;
+      if (kindFilter === 'product' && isAccessoryVariant(v)) return false;
+      if (!q) return true;
+      const hay = [v.code, v.name, v.short_description, v.subcategory]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return hay.includes(q);
+    });
+  }, [available, search, colorFilter, kindFilter]);
+
   const familyName = products.find((p) => p.id === familyId)?.name;
-  const allAvailableChecked =
-    available.length > 0 && available.every((v) => checkedIds.has(v.id));
+  const allFilteredChecked =
+    filtered.length > 0 && filtered.every((v) => checkedIds.has(v.id));
   const pendingCount = available.filter((v) => checkedIds.has(v.id)).length;
+  const filtersActive = Boolean(search.trim() || colorFilter || kindFilter !== 'all');
 
   const openPicker = () => {
     if (!familyId || available.length === 0) return;
     setCheckedIds(new Set());
+    setSearch('');
+    setColorFilter('');
+    setKindFilter('all');
     setPickerOpen(true);
   };
 
@@ -264,11 +309,15 @@ export function RelatedVariantsEditor({
   };
 
   const toggleAll = (next: boolean) => {
-    if (!next) {
-      setCheckedIds(new Set());
-      return;
-    }
-    setCheckedIds(new Set(available.map((v) => v.id)));
+    setCheckedIds((prev) => {
+      const copy = new Set(prev);
+      if (!next) {
+        for (const v of filtered) copy.delete(v.id);
+        return copy;
+      }
+      for (const v of filtered) copy.add(v.id);
+      return copy;
+    });
   };
 
   const handleAddFromPicker = () => {
@@ -422,28 +471,93 @@ export function RelatedVariantsEditor({
           onClick={() => setPickerOpen(false)}
         >
           <div
-            className="flex w-full max-w-xl max-h-[min(80vh,640px)] flex-col border border-gray-200 bg-white shadow-xl"
+            className="flex w-full max-w-2xl max-h-[min(86vh,720px)] flex-col border border-gray-200 bg-white shadow-xl"
             onClick={(e) => e.stopPropagation()}
             role="dialog"
             aria-modal="true"
             aria-labelledby="related-variant-picker-title"
           >
-            <div className="shrink-0 border-b border-gray-200 px-6 py-5 space-y-1">
-              <h2
-                id="related-variant-picker-title"
-                className="text-base font-semibold text-gray-900"
-              >
-                Select variants
-              </h2>
-              <p className="text-[12px] text-gray-500">
-                {familyName ? (
-                  <>
-                    Family <strong className="font-medium text-gray-700">{familyName}</strong>
-                    {' · '}
-                  </>
-                ) : null}
-                Check the ones to add to this sheet.
-              </p>
+            <div className="shrink-0 border-b border-gray-200 px-6 py-5 space-y-4">
+              <div className="space-y-1">
+                <h2
+                  id="related-variant-picker-title"
+                  className="text-base font-semibold text-gray-900"
+                >
+                  Select variants
+                </h2>
+                <p className="text-[12px] text-gray-500">
+                  {familyName ? (
+                    <>
+                      Family <strong className="font-medium text-gray-700">{familyName}</strong>
+                      {' · '}
+                    </>
+                  ) : null}
+                  Filter by color or kind, then check the ones to add.
+                </p>
+              </div>
+
+              <input
+                type="search"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search SKU, name or description…"
+                className={fieldClass}
+                autoFocus
+              />
+
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 mr-1">
+                  Color
+                </span>
+                <FilterChip
+                  active={!colorFilter}
+                  onClick={() => setColorFilter('')}
+                  label="All"
+                />
+                {colorOptions.map((c) => (
+                  <FilterChip
+                    key={c}
+                    active={colorFilter === c}
+                    onClick={() => setColorFilter(colorFilter === c ? '' : c)}
+                    label={c}
+                    mono
+                  />
+                ))}
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 mr-1">
+                  Kind
+                </span>
+                <FilterChip
+                  active={kindFilter === 'all'}
+                  onClick={() => setKindFilter('all')}
+                  label="All"
+                />
+                <FilterChip
+                  active={kindFilter === 'product'}
+                  onClick={() => setKindFilter(kindFilter === 'product' ? 'all' : 'product')}
+                  label="Products"
+                />
+                <FilterChip
+                  active={kindFilter === 'accessory'}
+                  onClick={() => setKindFilter(kindFilter === 'accessory' ? 'all' : 'accessory')}
+                  label="Accessories"
+                />
+                {filtersActive && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSearch('');
+                      setColorFilter('');
+                      setKindFilter('all');
+                    }}
+                    className="ml-auto text-[11px] text-gray-500 underline underline-offset-2 hover:text-gray-800"
+                  >
+                    Clear filters
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="shrink-0 flex items-center justify-between gap-3 border-b border-gray-100 bg-gray-50 px-6 py-3">
@@ -451,42 +565,58 @@ export function RelatedVariantsEditor({
                 <input
                   type="checkbox"
                   className="h-4 w-4 rounded-none border-gray-300 text-gray-900 focus:ring-gray-900"
-                  checked={allAvailableChecked}
+                  checked={allFilteredChecked}
+                  disabled={filtered.length === 0}
                   onChange={(e) => toggleAll(e.target.checked)}
                 />
-                Select all
+                Select all{filtersActive ? ' shown' : ''}
               </label>
               <span className="text-[11px] text-gray-400">
-                {pendingCount} of {available.length} selected
+                {pendingCount} selected · {filtered.length}
+                {filtersActive ? ` of ${available.length}` : ''} shown
               </span>
             </div>
 
             <ul className="min-h-0 flex-1 overflow-y-auto divide-y divide-gray-100">
-              {available.map((v) => {
-                const checked = checkedIds.has(v.id);
-                const hint = suggestComponent(v);
-                return (
-                  <li key={v.id}>
-                    <label className="flex items-start gap-3.5 px-6 py-3.5 cursor-pointer hover:bg-gray-50">
-                      <input
-                        type="checkbox"
-                        className="mt-0.5 h-4 w-4 shrink-0 rounded-none border-gray-300 text-gray-900 focus:ring-gray-900"
-                        checked={checked}
-                        onChange={(e) => toggleOne(v.id, e.target.checked)}
-                      />
-                      <span className="min-w-0 flex-1">
-                        <span className="block font-mono text-sm text-gray-900">{v.code}</span>
-                        <span className="mt-0.5 block text-[12px] text-gray-500 leading-snug">
-                          {v.short_description || v.name}
+              {filtered.length === 0 ? (
+                <li className="px-6 py-10 text-center text-[13px] text-gray-400">
+                  No variants match these filters.
+                </li>
+              ) : (
+                filtered.map((v) => {
+                  const checked = checkedIds.has(v.id);
+                  const hint = suggestComponent(v);
+                  const color = variantColor(v);
+                  return (
+                    <li key={v.id}>
+                      <label className="flex items-start gap-3.5 px-6 py-3.5 cursor-pointer hover:bg-gray-50">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5 h-4 w-4 shrink-0 rounded-none border-gray-300 text-gray-900 focus:ring-gray-900"
+                          checked={checked}
+                          onChange={(e) => toggleOne(v.id, e.target.checked)}
+                        />
+                        <span className="min-w-0 flex-1">
+                          <span className="block font-mono text-sm text-gray-900">{v.code}</span>
+                          <span className="mt-0.5 block text-[12px] text-gray-500 leading-snug">
+                            {v.short_description || v.name}
+                          </span>
                         </span>
-                      </span>
-                      <span className="shrink-0 pt-0.5 text-[10px] uppercase tracking-wide text-gray-400">
-                        {hint || 'No Type'}
-                      </span>
-                    </label>
-                  </li>
-                );
-              })}
+                        <span className="shrink-0 flex flex-col items-end gap-1 pt-0.5">
+                          {color ? (
+                            <span className="font-mono text-[10px] font-medium uppercase tracking-wide text-gray-700">
+                              {color}
+                            </span>
+                          ) : null}
+                          <span className="text-[10px] uppercase tracking-wide text-gray-400">
+                            {hint || (isAccessoryVariant(v) ? 'Accessories' : 'No Type')}
+                          </span>
+                        </span>
+                      </label>
+                    </li>
+                  );
+                })
+              )}
             </ul>
 
             <div className="shrink-0 flex items-center justify-end gap-3 border-t border-gray-200 px-6 py-4">
@@ -510,5 +640,33 @@ export function RelatedVariantsEditor({
         </div>
       )}
     </div>
+  );
+}
+
+function FilterChip({
+  label,
+  active,
+  onClick,
+  mono = false,
+}: {
+  label: string;
+  active: boolean;
+  onClick: () => void;
+  mono?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={
+        'border px-2.5 py-1 text-[11px] uppercase tracking-wide transition-colors ' +
+        (mono ? 'font-mono ' : '') +
+        (active
+          ? 'border-gray-900 bg-gray-900 text-white'
+          : 'border-gray-300 bg-white text-gray-700 hover:border-gray-500')
+      }
+    >
+      {label}
+    </button>
   );
 }

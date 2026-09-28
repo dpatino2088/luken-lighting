@@ -311,6 +311,19 @@ export function SkuFields({
               </div>
             )}
             <ColorAndVersion state={state} set={set} />
+            <div>
+              <label className={labelClass}>Custom text (required)</label>
+              <input
+                className={inputClass}
+                value={state.accessorySuffix || ''}
+                onChange={(e) => set({ accessorySuffix: e.target.value })}
+                placeholder="e.g. 50x65, kit, required option"
+              />
+              <p className="mt-1 text-[11px] text-gray-400">
+                Last segment of the SKU. Letters and digits only (
+                <span className="font-mono">50x65 → 50X65</span>).
+              </p>
+            </div>
           </>
         ) : trackMode ? (
           <>

@@ -48,6 +48,8 @@ export interface SkuState {
   accessoryType: string;
   /** Free-text accessory type when accessoryType === 'CUSTOM'. */
   accessoryTypeCustom: string;
+  /** Free-text suffix at the end of an accessory SKU (required option, size, kit…). */
+  accessorySuffix: string;
   source: string;
   socket: string;
   socketCustom: string; // custom socket when socket === 'CUSTOM'
@@ -86,6 +88,7 @@ export const EMPTY_SKU_STATE: SkuState = {
   mounting: '',
   accessoryType: '',
   accessoryTypeCustom: '',
+  accessorySuffix: '',
   source: '',
   socket: '',
   socketCustom: '',
@@ -422,6 +425,7 @@ export function leaveAccessorySkuMode(state: SkuState): SkuState {
     shape: state.shape === 'ACC' ? '' : state.shape,
     accessoryType: '',
     accessoryTypeCustom: '',
+    accessorySuffix: '',
   };
 }
 
@@ -846,6 +850,11 @@ export function buildSku(state: SkuState): SkuResult {
     {
       const ver = resolveVersion(state);
       if (ver.code) add(ver.code, true, ver.desc, true);
+    }
+    {
+      const raw = (state.accessorySuffix || '').trim();
+      const code = raw.toUpperCase().replace(/[^A-Z0-9]+/g, '').slice(0, 16);
+      if (code) add(code, true, raw, true);
     }
 
     const shortSegs = segs.filter((s) => s.inShort).map((s) => s.val);

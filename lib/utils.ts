@@ -72,3 +72,10 @@ export function formatCRI(cri?: number | null): string | null {
   return `${cri}+ CRI`;
 }
 
+/** Compact card label, e.g. CRI90 — matches BK / IP20 on product cards. */
+export function formatCRICompact(cri?: number | null): string | null {
+  if (cri == null) return null;
+  const value = cri >= 1000 ? Math.floor(cri / 100) : cri;
+  return `CRI${value}`;
+}
+

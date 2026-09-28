@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import Image from 'next/image';
 import { ProductVariant } from '@/lib/types';
-import { formatCCT } from '@/lib/utils';
+import { formatCCT, formatCRICompact } from '@/lib/utils';
 import { getLatestAssetUrl } from '@/lib/assets';
 import { extractSkuColorCode } from '@/lib/sku/skuRules';
 
@@ -18,6 +18,7 @@ export function ProductCard({ product, hideSku = false }: ProductCardProps) {
     ? `/products/${familySlug}/${product.slug}`
     : `/products/${product.slug}`;
   const colorCode = extractSkuColorCode(product.code, product.finish);
+  const criLabel = formatCRICompact(product.cri);
 
   return (
     <Link href={href} className="group block">
@@ -61,6 +62,7 @@ export function ProductCard({ product, hideSku = false }: ProductCardProps) {
               <span className="font-mono font-medium text-gray-900">{colorCode}</span>
             ) : null}
             {product.ip_rating && <span>{product.ip_rating}</span>}
+            {criLabel && <span>{criLabel}</span>}
             {(product.cct_min || product.cct_max) && (
               <span>{formatCCT(product.cct_min, product.cct_max)}</span>
             )}
