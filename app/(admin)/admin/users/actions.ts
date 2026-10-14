@@ -75,7 +75,7 @@ export async function inviteUser(formData: FormData): Promise<{ error?: string; 
 
   const { data, error } = await admin.auth.admin.inviteUserByEmail(email, {
     data: { full_name: fullName },
-    redirectTo: `${siteUrl()}/auth/confirm`,
+    redirectTo: `${siteUrl()}/auth/confirm?next=/admin/reset-password`,
   });
 
   if (error) return { error: error.message };
@@ -90,6 +90,69 @@ export async function inviteUser(formData: FormData): Promise<{ error?: string; 
 
   revalidatePath('/admin/users');
   return { success: true };
+}
+
+const authRedirectTo = () => `${siteUrl()}/auth/confirm?next=/admin/reset-password`;
+
+export async function sendPasswordReset(
+  userId: string
+): Promise<{ error?: string; success?: boolean; kind?: 'recovery' | 'invite' }> {
+  if (!(await isCurrentUserAdmin())) return { error: 'Not authorized' };
+
+  const admin = createAdminClient();
+  if (!admin) {
+    return {
+      error:
+        'Server not configured: add SUPABASE_SERVICE_ROLE_KEY in Vercel Environment Variables, then redeploy.',
+    };
+  }
+
+  const { data: authRes, error: getError } = await admin.auth.admin.getUserById(userId);
+  if (getError) return { error: getError.message };
+  const user = authRes.user;
+  if (!user?.email) return { error: 'User not found' };
+
+  if (user.email_confirmed_at) {
+    const { error } = await admin.auth.resetPasswordForEmail(user.email, {
+      redirectTo: authRedirectTo(),
+    });
+    if (error) return { error: error.message };
+    return { success: true, kind: 'recovery' };
+  }
+
+  const { data: profile, error: profileReadError } = await admin
+    .from('user_profiles')
+    .select('full_name, role')
+    .eq('id', userId)
+    .maybeSingle();
+  if (profileReadError) return { error: profileReadError.message };
+
+  const fullName =
+    (profile?.full_name as string | null)?.trim() ||
+    (user.user_metadata?.full_name as string | undefined) ||
+    user.email;
+  const profileRole = profile?.role as AppRole | undefined;
+  const role: AppRole = profileRole && VALID_ROLES.includes(profileRole) ? profileRole : 'viewer';
+
+  const { error: deleteError } = await admin.auth.admin.deleteUser(userId);
+  if (deleteError) return { error: deleteError.message };
+
+  const { data, error } = await admin.auth.admin.inviteUserByEmail(user.email, {
+    data: { full_name: fullName },
+    redirectTo: authRedirectTo(),
+  });
+  if (error) return { error: error.message };
+
+  const newId = data.user?.id;
+  if (newId) {
+    const { error: profileError } = await admin
+      .from('user_profiles')
+      .upsert({ id: newId, full_name: fullName, role }, { onConflict: 'id' });
+    if (profileError) return { error: profileError.message };
+  }
+
+  revalidatePath('/admin/users');
+  return { success: true, kind: 'invite' };
 }
 
 export async function updateUserRole(userId: string, role: AppRole): Promise<{ error?: string; success?: boolean }> {

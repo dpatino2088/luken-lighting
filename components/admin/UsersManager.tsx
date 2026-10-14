@@ -4,8 +4,14 @@ import { useState, useTransition, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { UserPlus, Trash2, Mail } from 'lucide-react';
-import { inviteUser, updateUserRole, deleteUser, type AdminUserRow } from '@/app/(admin)/admin/users/actions';
+import { UserPlus, Trash2, Mail, KeyRound, Send } from 'lucide-react';
+import {
+  inviteUser,
+  updateUserRole,
+  deleteUser,
+  sendPasswordReset,
+  type AdminUserRow,
+} from '@/app/(admin)/admin/users/actions';
 import { confirmDialog } from '@/components/ui/ConfirmDialog';
 import { toast } from '@/components/ui/Toast';
 import type { AppRole } from '@/lib/auth';
@@ -69,6 +75,22 @@ export function UsersManager({
     }
     toast.success('Role updated.');
     startTransition(() => router.refresh());
+  };
+
+  const handleSendReset = async (user: AdminUserRow) => {
+    setBusyId(user.id);
+    const result = await sendPasswordReset(user.id);
+    setBusyId(null);
+    if (result.error) {
+      toast.error(result.error);
+      return;
+    }
+    if (result.kind === 'invite') {
+      toast.success(`Invitation re-sent to ${user.email}`);
+      startTransition(() => router.refresh());
+      return;
+    }
+    toast.success(`Password reset email sent to ${user.email}`);
   };
 
   const handleDelete = async (userId: string, userEmail: string) => {
@@ -206,15 +228,26 @@ export function UsersManager({
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-gray-500">{formatDate(u.last_sign_in_at)}</td>
                       <td className="px-6 py-4 whitespace-nowrap text-right">
-                        <button
-                          type="button"
-                          onClick={() => handleDelete(u.id, u.email)}
-                          disabled={isSelf || busyId === u.id}
-                          title={isSelf ? 'You cannot delete your own account' : 'Delete user'}
-                          className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        <div className="inline-flex items-center justify-end gap-1">
+                          <button
+                            type="button"
+                            onClick={() => handleSendReset(u)}
+                            disabled={busyId === u.id}
+                            title={u.confirmed ? 'Send password reset email' : 'Resend invitation'}
+                            className="p-1.5 text-gray-400 hover:text-gray-900 hover:bg-gray-100 transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+                          >
+                            {u.confirmed ? <KeyRound className="w-4 h-4" /> : <Send className="w-4 h-4" />}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDelete(u.id, u.email)}
+                            disabled={isSelf || busyId === u.id}
+                            title={isSelf ? 'You cannot delete your own account' : 'Delete user'}
+                            className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );
